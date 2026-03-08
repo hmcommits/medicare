@@ -29,3 +29,27 @@ export const getMedicines = async () => {
     throw error;
   }
 };
+
+const ADHERENCE_KEY = '@medicare_adherence';
+
+export const logAdherence = async (medicineId, status) => {
+  try {
+    const existingLogsJson = await AsyncStorage.getItem(ADHERENCE_KEY);
+    const existingLogs = existingLogsJson ? JSON.parse(existingLogsJson) : [];
+    
+    const newLog = {
+      id: Date.now().toString(),
+      medicineId,
+      status, // 'Took', 'Missed', 'Snoozed'
+      timestamp: new Date().toISOString()
+    };
+    
+    const updatedLogs = [...existingLogs, newLog];
+    await AsyncStorage.setItem(ADHERENCE_KEY, JSON.stringify(updatedLogs));
+    
+    return updatedLogs;
+  } catch (error) {
+    console.error('Error logging adherence:', error);
+    throw error;
+  }
+};

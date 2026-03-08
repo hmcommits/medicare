@@ -1,11 +1,16 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getMedicines } from '../services/storageService';
+import { getMedicines, logAdherence } from '../services/storageService';
+import ReminderModal from '../components/ReminderModal';
 
 export default function Dashboard({ route, navigation }) {
   const role = route.params?.role || 'patient'; 
   const [medicines, setMedicines] = useState([]);
+  
+  // Reminder Modal State
+  const [reminderVisible, setReminderVisible] = useState(false);
+  const [currentReminderMedicine, setCurrentReminderMedicine] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,6 +68,30 @@ export default function Dashboard({ route, navigation }) {
     );
   };
 
+  const testReminder = () => {
+    if (medicines.length === 0) {
+      Alert.alert('No Medicines', 'Please add a medicine first to test the reminder.');
+      return;
+    }
+    // Randomly pick the first medicine for testing
+    setCurrentReminderMedicine(medicines[0]);
+    setReminderVisible(true);
+  };
+
+  const handleReminderResponse = async (status) => {
+    try {
+      if (currentReminderMedicine) {
+        await logAdherence(currentReminderMedicine.id, status);
+        console.log(`Logged ${status} for ${currentReminderMedicine.name}`);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to log adherence.');
+    } finally {
+      setReminderVisible(false);
+      setCurrentReminderMedicine(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Dashboard</Text>
@@ -87,14 +116,30 @@ export default function Dashboard({ route, navigation }) {
       </View>
 
       {role === 'patient' && (
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddMedicine')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.addButtonText}>+ Add New Medicine</Text>
-        </TouchableOpacity>
+        <View style={styles.actionContainer}>
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={testReminder}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.testButtonText}>Test Reminder</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={() => navigation.navigate('AddMedicine')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addButtonText}>+ Add New Medicine</Text>
+          </TouchableOpacity>
+        </View>
       )}
+
+      <ReminderModal
+        visible={reminderVisible}
+        medicine={currentReminderMedicine}
+        onResponse={handleReminderResponse}
+      />
     </View>
   );
 }
@@ -162,6 +207,28 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#34495E',
     marginBottom: 8,
+  },
+  actionContainer: {
+    width: '100%',
+    paddingTop: 10,
+  },
+  testButton: {
+    backgroundColor: '#F39C12', // Orange for testing
+    paddingVertical: 18,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  testButtonText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   addButton: {
     backgroundColor: '#3498DB',
