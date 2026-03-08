@@ -8,6 +8,7 @@ export const saveMedicine = async (newMedicine) => {
     const existingMedicines = existingMedicinesJson ? JSON.parse(existingMedicinesJson) : [];
     
     // Add new medicine to the list with a unique ID
+    // Note: newMedicine now contains arrays for 'times' and 'days' which stringify automatically
     const updatedMedicines = [...existingMedicines, { ...newMedicine, id: Date.now().toString() }];
     
     // Save back to storage
