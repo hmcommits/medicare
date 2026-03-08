@@ -10,7 +10,7 @@ export default function LoginScreen({ navigation }) {
 
       <TouchableOpacity 
         style={[styles.button, styles.patientButton]}
-        onPress={() => navigation.navigate('Dashboard', { role: 'patient' })}
+        onPress={() => navigation.navigate('PatientLink')}
         activeOpacity={0.8}
       >
         <Text style={styles.buttonText}>Patient</Text>
@@ -18,7 +18,7 @@ export default function LoginScreen({ navigation }) {
 
       <TouchableOpacity 
         style={[styles.button, styles.guardianButton]}
-        onPress={() => navigation.navigate('Dashboard', { role: 'guardian' })}
+        onPress={() => navigation.navigate('GuardianLink')}
         activeOpacity={0.8}
       >
         <Text style={styles.buttonText}>Guardian</Text>

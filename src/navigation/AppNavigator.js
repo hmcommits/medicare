@@ -2,6 +2,8 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import LoginScreen from '../screens/LoginScreen';
 import Dashboard from '../screens/Dashboard';
+import PatientLinkScreen from '../screens/PatientLinkScreen';
+import GuardianLinkScreen from '../screens/GuardianLinkScreen';
 
 const Stack = createStackNavigator();
 
@@ -13,6 +15,16 @@ export default function AppNavigator() {
         component={LoginScreen} 
         options={{ headerShown: false }} 
       />
+      <Stack.Screen 
+        name="PatientLink" 
+        component={PatientLinkScreen} 
+        options={{ title: 'Patient Code' }}
+      />
+      <Stack.Screen 
+        name="GuardianLink" 
+        component={GuardianLinkScreen} 
+        options={{ title: 'Connect to Patient' }}
+    />
       <Stack.Screen 
         name="Dashboard" 
         component={Dashboard} 
