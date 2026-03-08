@@ -53,3 +53,13 @@ export const logAdherence = async (medicineId, status) => {
     throw error;
   }
 };
+
+export const getAdherenceLogs = async () => {
+  try {
+    const jsonValue = await AsyncStorage.getItem(ADHERENCE_KEY);
+    return jsonValue != null ? JSON.parse(jsonValue) : [];
+  } catch (error) {
+    console.error('Error fetching adherence logs:', error);
+    throw error;
+  }
+};

@@ -19,11 +19,17 @@ export default function AddMedicineScreen({ navigation }) {
   
   // State for multiple times
   const [times, setTimes] = useState([new Date()]); // default one time
+  const [showPicker, setShowPicker] = useState([false]); // State for picker visibility
   
   // State for selected days (indecies 0-6)
   const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]); // Default all days
 
   const handleTimeChange = (event, selectedTime, index) => {
+    // Explicitly hide picker immediately on any event (set or dismiss)
+    const newShowPicker = [...showPicker];
+    newShowPicker[index] = false;
+    setShowPicker(newShowPicker);
+
     if (selectedTime) {
       const newTimes = [...times];
       newTimes[index] = selectedTime;
@@ -33,10 +39,12 @@ export default function AddMedicineScreen({ navigation }) {
 
   const addAnotherTime = () => {
     setTimes([...times, new Date()]);
+    setShowPicker([...showPicker, false]);
   };
 
   const removeTime = (indexToRemove) => {
     setTimes(times.filter((_, index) => index !== indexToRemove));
+    setShowPicker(showPicker.filter((_, index) => index !== indexToRemove));
   };
 
   const toggleDay = (dayValue) => {
@@ -167,14 +175,28 @@ export default function AddMedicineScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <DateTimePicker
-                  value={time}
-                  mode="time"
-                  is24Hour={false}
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, selectedTime) => handleTimeChange(event, selectedTime, index)}
-                  style={styles.datePicker}
-                />
+                <View style={{width: '100%', alignItems: 'center'}}>
+                  {/* For Android, we use a button to show the picker, for iOS we can show it inline or also use a button. */}
+                  {Platform.OS === 'android' ? (
+                    <TouchableOpacity onPress={() => {
+                      const newShowPicker = [...showPicker];
+                      newShowPicker[index] = true;
+                      setShowPicker(newShowPicker);
+                    }} style={{padding: 15}}>
+                      <Text style={{fontSize: 20, color: '#2C3E50'}}>{formatTime(time)}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {(showPicker[index] || Platform.OS === 'ios') && (
+                    <DateTimePicker
+                      value={time}
+                      mode="time"
+                      is24Hour={false}
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(event, selectedTime) => handleTimeChange(event, selectedTime, index)}
+                      style={styles.datePicker}
+                    />
+                  )}
+                </View>
               )}
             </View>
             
