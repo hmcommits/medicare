@@ -51,6 +51,15 @@ export default function AddMedicineScreen({ navigation }) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const adjustWebTime = (index, hoursToAdd, minutesToAdd) => {
+    const newTimes = [...times];
+    const newDate = new Date(newTimes[index]);
+    newDate.setHours(newDate.getHours() + hoursToAdd);
+    newDate.setMinutes(newDate.getMinutes() + minutesToAdd);
+    newTimes[index] = newDate;
+    setTimes(newTimes);
+  };
+
   const handleSave = async () => {
     if (!name.trim() || !dosage.trim()) {
       Alert.alert('Error', 'Please enter the medicine name and dosage.');
@@ -144,8 +153,19 @@ export default function AddMedicineScreen({ navigation }) {
         <View key={index} style={styles.timeRow}>
             <View style={styles.pickerContainer}>
               {Platform.OS === 'web' ? (
-                // Fallback for web until custom web pciker is added natively
-                <Text style={styles.webTimeFallback}>{formatTime(time)}</Text>
+                <View style={styles.webTimeFallbackContainer}>
+                  <TouchableOpacity onPress={() => adjustWebTime(index, -1, 0)} style={styles.timeAdjustBtn}>
+                    <Text style={styles.timeAdjustBtnText}>- 1h</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.webTimeFallback}>{formatTime(time)}</Text>
+                  <TouchableOpacity onPress={() => adjustWebTime(index, 1, 0)} style={styles.timeAdjustBtn}>
+                    <Text style={styles.timeAdjustBtnText}>+ 1h</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity onPress={() => adjustWebTime(index, 0, 15)} style={[styles.timeAdjustBtn, {marginLeft: 15}]}>
+                    <Text style={styles.timeAdjustBtnText}>+ 15m</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <DateTimePicker
                   value={time}
@@ -263,10 +283,30 @@ const styles = StyleSheet.create({
     width: '100%',
     height: Platform.OS === 'ios' ? 120 : 60,
   },
+  webTimeFallbackContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
   webTimeFallback: {
-    fontSize: 20,
+    fontSize: 22,
+    fontWeight: 'bold',
     color: '#2C3E50',
-    paddingVertical: 15,
+    marginHorizontal: 15,
+  },
+  timeAdjustBtn: {
+    backgroundColor: '#E8F8F5',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1ABC9C',
+  },
+  timeAdjustBtnText: {
+    color: '#16A085',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   removeButton: {
     marginLeft: 15,
