@@ -4,6 +4,7 @@ import LoginScreen from '../screens/LoginScreen';
 import Dashboard from '../screens/Dashboard';
 import PatientLinkScreen from '../screens/PatientLinkScreen';
 import GuardianLinkScreen from '../screens/GuardianLinkScreen';
+import AddMedicineScreen from '../screens/AddMedicineScreen';
 
 const Stack = createStackNavigator();
 
@@ -24,10 +25,15 @@ export default function AppNavigator() {
         name="GuardianLink" 
         component={GuardianLinkScreen} 
         options={{ title: 'Connect to Patient' }}
-    />
+      />
       <Stack.Screen 
         name="Dashboard" 
         component={Dashboard} 
+      />
+      <Stack.Screen 
+        name="AddMedicine" 
+        component={AddMedicineScreen} 
+        options={{ title: 'Add Medicine' }}
       />
     </Stack.Navigator>
   );

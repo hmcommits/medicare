@@ -1,0 +1,30 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const STORAGE_KEY = '@medicare_medicines';
+
+export const saveMedicine = async (newMedicine) => {
+  try {
+    const existingMedicinesJson = await AsyncStorage.getItem(STORAGE_KEY);
+    const existingMedicines = existingMedicinesJson ? JSON.parse(existingMedicinesJson) : [];
+    
+    // Add new medicine to the list with a unique ID
+    const updatedMedicines = [...existingMedicines, { ...newMedicine, id: Date.now().toString() }];
+    
+    // Save back to storage
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedMedicines));
+    return updatedMedicines;
+  } catch (error) {
+    console.error('Error saving medicine:', error);
+    throw error;
+  }
+};
+
+export const getMedicines = async () => {
+  try {
+    const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
+    return jsonValue != null ? JSON.parse(jsonValue) : [];
+  } catch (error) {
+    console.error('Error fetching medicines:', error);
+    throw error;
+  }
+};
