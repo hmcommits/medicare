@@ -18,6 +18,7 @@ export default function Dashboard({ route, navigation }) {
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
+      let interval; // Set up a quick real-time poll for adherence badges
 
       const fetchData = async () => {
         try {
@@ -34,9 +35,11 @@ export default function Dashboard({ route, navigation }) {
       };
 
       fetchData();
+      interval = setInterval(fetchData, 10000); // 10 second data sync while focused
 
       return () => {
         isActive = false;
+        clearInterval(interval);
       };
     }, [])
   );
@@ -156,15 +159,7 @@ export default function Dashboard({ route, navigation }) {
     };
   };
 
-  const testReminder = () => {
-    if (medicines.length === 0) {
-      Alert.alert('No Medicines', 'Please add a medicine first to test the reminder.');
-      return;
-    }
-    // Randomly pick the first medicine for testing
-    setCurrentReminderMedicine(medicines[0]);
-    setReminderVisible(true);
-  };
+  // Testing function removed as requested
 
   const handleReminderResponse = async (status) => {
     try {
@@ -263,16 +258,6 @@ export default function Dashboard({ route, navigation }) {
 
         {(role === 'patient' || (role === 'guardian' && isEditMode)) && (
           <View style={styles.actionContainer}>
-            {role === 'patient' && (
-              <TouchableOpacity 
-                style={styles.testButton}
-                onPress={testReminder}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.testButtonText}>Test Reminder</Text>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity 
               style={styles.addButton}
               onPress={() => navigation.navigate('AddMedicine')}
@@ -477,24 +462,6 @@ const styles = StyleSheet.create({
   actionContainer: {
     width: '100%',
     paddingTop: 10,
-  },
-  testButton: {
-    backgroundColor: '#F39C12', // Orange for testing
-    paddingVertical: 18,
-    borderRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  testButtonText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
   },
   addButton: {
     backgroundColor: '#3498DB',
