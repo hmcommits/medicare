@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, Dimensions, 
 import { useFocusEffect } from '@react-navigation/native';
 import { getMedicines, logAdherence, getAdherenceLogs } from '../services/storageService';
 import ReminderModal from '../components/ReminderModal';
-import { BarChart } from 'react-native-chart-kit';
+import { StackedBarChart } from 'react-native-chart-kit';
 
 export default function Dashboard({ route, navigation }) {
   const role = route.params?.role || 'patient'; 
@@ -143,13 +143,15 @@ export default function Dashboard({ route, navigation }) {
       return ['S','M','T','W','T','F','S'][d.getDay()];
     });
 
+    // Format for StackedBarChart: array of arrays where each sub-array corresponds to [Took, Missed] for a specific day
+    const stackedData = last7Days.map((_, index) => {
+      return [dataTook[index], dataMissed[index]];
+    });
+
     return {
       labels,
       legend: ["Took", "Missed"],
-      data: [
-        dataTook,
-        dataMissed
-      ],
+      data: stackedData,
       barColors: ["#2ECC71", "#E74C3C"]
     };
   };
@@ -214,11 +216,11 @@ export default function Dashboard({ route, navigation }) {
             <Text style={styles.sectionTitle}>7-Day Adherence</Text>
             <View style={styles.chartContainer}>
               {logs.length > 0 ? (
-                <BarChart
+                <StackedBarChart
                   data={getChartData()}
                   width={Dimensions.get("window").width - 50}
                   height={220}
-                  yAxisLabel=""
+                  decimalPlaces={0}
                   chartConfig={{
                     backgroundColor: "#ffffff",
                     backgroundGradientFrom: "#ffffff",
@@ -226,10 +228,8 @@ export default function Dashboard({ route, navigation }) {
                     decimalPlaces: 0,
                     color: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
                     labelColor: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
-                    barPercentage: 0.5,
                   }}
-                  withCustomBarColorFromData={true}
-                  flatColor={true}
+                  hideLegend={false}
                   style={styles.chart}
                 />
               ) : (
