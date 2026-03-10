@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen({ navigation }) {
   return (
@@ -10,7 +11,10 @@ export default function LoginScreen({ navigation }) {
 
       <TouchableOpacity 
         style={[styles.button, styles.patientButton]}
-        onPress={() => navigation.navigate('PatientLink')}
+        onPress={async () => {
+          await AsyncStorage.setItem('@medicare_user_role', 'patient');
+          navigation.navigate('PatientLink');
+        }}
         activeOpacity={0.8}
       >
         <Text style={styles.buttonText}>Patient</Text>
@@ -18,7 +22,10 @@ export default function LoginScreen({ navigation }) {
 
       <TouchableOpacity 
         style={[styles.button, styles.guardianButton]}
-        onPress={() => navigation.navigate('GuardianLink')}
+        onPress={async () => {
+          await AsyncStorage.setItem('@medicare_user_role', 'guardian');
+          navigation.navigate('GuardianLink');
+        }}
         activeOpacity={0.8}
       >
         <Text style={styles.buttonText}>Guardian</Text>

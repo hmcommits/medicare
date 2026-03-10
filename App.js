@@ -1,5 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
 import ReminderModal from './src/components/ReminderModal';
@@ -19,6 +20,9 @@ export default function App() {
       if (reminderVisible) return;
 
       try {
+        const userRole = await AsyncStorage.getItem('@medicare_user_role');
+        if (userRole !== 'patient') return; // Guardian view does not fire alarms
+
         const medicines = await getMedicines();
         if (!medicines || medicines.length === 0) return;
 

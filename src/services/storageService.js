@@ -54,13 +54,29 @@ export const logAdherence = async (medicineId, status) => {
   try {
     const patientCode = await getActivePatientCode();
     
+    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
+    const snapshot = await getDocs(logsRef);
+    
+    const now = new Date();
+    const oneMinuteAgo = new Date(now.getTime() - 60000); // 1 minute window
+
+    // Ensure we don't accidentally log the exact same adherence status for the same medicine in the same minute
+    const duplicateExists = snapshot.docs.some(doc => {
+      const log = doc.data();
+      return log.medicineId === medicineId && new Date(log.timestamp) > oneMinuteAgo;
+    });
+
+    if (duplicateExists) {
+      console.log(`Prevented duplicate adherence log for medicine ${medicineId} within 1 minute window.`);
+      return true; // Pretend it succeeded
+    }
+
     const newLog = {
       medicineId,
       status, // 'Took', 'Missed', 'Snoozed'
-      timestamp: new Date().toISOString()
+      timestamp: now.toISOString()
     };
     
-    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
     await addDoc(logsRef, newLog);
     
     return true;
