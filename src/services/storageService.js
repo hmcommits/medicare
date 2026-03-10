@@ -88,3 +88,33 @@ export const getAdherenceLogs = async () => {
     return [];
   }
 };
+
+export const getWeeklyAdherenceData = async (patientCode) => {
+  try {
+    // If patientCode isn't explicitly passed, get the active one
+    const codeToUse = patientCode || await getActivePatientCode();
+    
+    const logsRef = collection(db, 'patients', codeToUse, 'adherenceLogs');
+    const snapshot = await getDocs(logsRef);
+    const logs = snapshot.docs.map(doc => doc.data());
+
+    // Initialize array for the last 7 days
+    const last7Days = [...Array(7)].map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return d.toDateString();
+    }).reverse();
+
+    return last7Days.map(dateStr => {
+      const dayLogs = logs.filter(log => new Date(log.timestamp).toDateString() === dateStr);
+      if (dayLogs.length === 0) return 0;
+      
+      const tookCount = dayLogs.filter(log => log.status === 'Took').length;
+      return Math.round((tookCount / dayLogs.length) * 100);
+    });
+
+  } catch (error) {
+    console.error('Error calculating weekly adherence data:', error);
+    return Array(7).fill(0);
+  }
+};

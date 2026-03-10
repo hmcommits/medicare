@@ -1,14 +1,15 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, Dimensions, ScrollView } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getMedicines, logAdherence, getAdherenceLogs } from '../services/storageService';
+import { getMedicines, logAdherence, getAdherenceLogs, getWeeklyAdherenceData } from '../services/storageService';
 import ReminderModal from '../components/ReminderModal';
-import { StackedBarChart } from 'react-native-chart-kit';
+import { LineChart } from 'react-native-chart-kit';
 
 export default function Dashboard({ route, navigation }) {
   const role = route.params?.role || 'patient'; 
   const [medicines, setMedicines] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [weeklyAdherence, setWeeklyAdherence] = useState(Array(7).fill(0));
   const [isEditMode, setIsEditMode] = useState(false);
   
   // Reminder Modal State
@@ -24,10 +25,12 @@ export default function Dashboard({ route, navigation }) {
         try {
           const fetchedMedicines = await getMedicines();
           const fetchedLogs = await getAdherenceLogs();
+          const fetchedWeeklyData = await getWeeklyAdherenceData();
           
           if (isActive) {
             setMedicines(fetchedMedicines);
             setLogs(fetchedLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+            setWeeklyAdherence(fetchedWeeklyData);
           }
         } catch (error) {
           console.error('Failed to load dashboard data', error);
@@ -121,41 +124,27 @@ export default function Dashboard({ route, navigation }) {
     });
   };
 
-  const getChartData = () => {
-    // Last 7 days counting Took vs Missed
+  const getLineChartData = () => {
     const last7Days = [...Array(7)].map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - i);
       return d.toDateString();
     }).reverse();
 
-    const dataTook = Array(7).fill(0);
-    const dataMissed = Array(7).fill(0);
-
-    logs.forEach(log => {
-      const logDate = new Date(log.timestamp).toDateString();
-      const dayIndex = last7Days.indexOf(logDate);
-      if (dayIndex !== -1) {
-        if (log.status === 'Took') dataTook[dayIndex]++;
-        if (log.status === 'Missed') dataMissed[dayIndex]++;
-      }
-    });
-
     const labels = last7Days.map(dateStr => {
       const d = new Date(dateStr);
-      return ['S','M','T','W','T','F','S'][d.getDay()];
-    });
-
-    // Format for StackedBarChart: array of arrays where each sub-array corresponds to [Took, Missed] for a specific day
-    const stackedData = last7Days.map((_, index) => {
-      return [dataTook[index], dataMissed[index]];
+      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
     });
 
     return {
       labels,
-      legend: ["Took", "Missed"],
-      data: stackedData,
-      barColors: ["#2ECC71", "#E74C3C"]
+      datasets: [
+        {
+          data: weeklyAdherence,
+          color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`, // MediCare Blue
+          strokeWidth: 3
+        }
+      ],
     };
   };
 
@@ -169,7 +158,9 @@ export default function Dashboard({ route, navigation }) {
         
         // Refresh logs immediately so the Done badge updates if "Took" is clicked
         const fetchedLogs = await getAdherenceLogs();
+        const fetchedWeeklyData = await getWeeklyAdherenceData();
         setLogs(fetchedLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+        setWeeklyAdherence(fetchedWeeklyData);
 
         if (status === 'Snoozed') {
           const snoozedMedicine = currentReminderMedicine;
@@ -211,20 +202,25 @@ export default function Dashboard({ route, navigation }) {
             <Text style={styles.sectionTitle}>7-Day Adherence</Text>
             <View style={styles.chartContainer}>
               {logs.length > 0 ? (
-                <StackedBarChart
-                  data={getChartData()}
+                <LineChart
+                  data={getLineChartData()}
                   width={Dimensions.get("window").width - 50}
                   height={220}
-                  decimalPlaces={0}
+                  yAxisSuffix="%"
                   chartConfig={{
                     backgroundColor: "#ffffff",
                     backgroundGradientFrom: "#ffffff",
                     backgroundGradientTo: "#ffffff",
                     decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
+                    color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`, // Translucent blue below
                     labelColor: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
+                    propsForDots: {
+                      r: "5",
+                      strokeWidth: "2",
+                      stroke: "#2980b9"
+                    }
                   }}
-                  hideLegend={false}
+                  bezier
                   style={styles.chart}
                 />
               ) : (
