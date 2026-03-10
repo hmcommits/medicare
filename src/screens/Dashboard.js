@@ -1,6 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, Dimensions, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, Dimensions, ScrollView, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { getMedicines, logAdherence, getAdherenceLogs, getWeeklyAdherenceData } from '../services/storageService';
 import ReminderModal from '../components/ReminderModal';
 import { LineChart } from 'react-native-chart-kit';
@@ -85,13 +90,23 @@ export default function Dashboard({ route, navigation }) {
           <Text style={styles.medicineName}>{item.name}</Text>
           {isDone && (
             <View style={styles.doneBadge}>
+              <MaterialCommunityIcons name="check-circle" size={16} color="#FFFFFF" style={{marginRight: 4}} />
               <Text style={styles.doneText}>Done</Text>
             </View>
           )}
         </View>
-        <Text style={styles.medicineDetail}>Dosage: {item.dosage}</Text>
-        <Text style={styles.medicineDetail}>Times: {formattedTimes}</Text>
-        <Text style={styles.medicineDetail}>Days: {formattedDays}</Text>
+        <View style={styles.detailRow}>
+          <MaterialCommunityIcons name="pill" size={20} color="#7F8C8D" style={styles.detailIcon} />
+          <Text style={styles.medicineDetail}>{item.dosage}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <MaterialCommunityIcons name="clock-outline" size={20} color="#7F8C8D" style={styles.detailIcon} />
+          <Text style={styles.medicineDetail}>{formattedTimes}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <MaterialCommunityIcons name="calendar-month-outline" size={20} color="#7F8C8D" style={styles.detailIcon} />
+          <Text style={styles.medicineDetail}>{formattedDays}</Text>
+        </View>
       </View>
     );
   };
@@ -159,6 +174,10 @@ export default function Dashboard({ route, navigation }) {
         // Refresh logs immediately so the Done badge updates if "Took" is clicked
         const fetchedLogs = await getAdherenceLogs();
         const fetchedWeeklyData = await getWeeklyAdherenceData();
+        
+        // Trigger smooth layout animation before updating state
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        
         setLogs(fetchedLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
         setWeeklyAdherence(fetchedWeeklyData);
 
@@ -239,8 +258,9 @@ export default function Dashboard({ route, navigation }) {
         <View style={styles.listContainer}>
           {medicines.length === 0 ? (
             <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="emoticon-happy-outline" size={64} color="#BDC3C7" style={{ marginBottom: 15 }} />
               <Text style={styles.emptyStateText}>
-                No medicines added yet.{'\n'}Tap the + button to start.
+                No medicines scheduled,{'\n'}Rest up!
               </Text>
             </View>
           ) : (
@@ -419,10 +439,10 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
     borderLeftWidth: 8,
     borderLeftColor: '#3498DB',
   },
@@ -430,30 +450,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   medicineName: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#2C3E50',
     flex: 1,
   },
   doneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2ECC71',
-    paddingVertical: 5,
+    paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 20,
     marginLeft: 10,
   },
   doneText: {
     color: '#FFFFFF',
-    fontWeight: 'bold',
+    fontWeight: '700',
     fontSize: 14,
   },
-  medicineDetail: {
-    fontSize: 20,
-    color: '#34495E',
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  detailIcon: {
+    marginRight: 10,
+    width: 24,
+  },
+  medicineDetail: {
+    fontSize: 18,
+    color: '#5D6D7E',
+    fontWeight: '500',
   },
   actionContainer: {
     width: '100%',
