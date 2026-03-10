@@ -3,9 +3,12 @@ import { db } from './firebaseConfig';
 import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 
 const getActivePatientCode = async () => {
-  const code = await AsyncStorage.getItem('@medicare_active_patient_code');
+  let code = await AsyncStorage.getItem('@medicare_active_patient_code');
   if (!code) {
-    throw new Error("No active patient code found. Please navigate to the link screen first.");
+    // If the user hasn't visited the link screen yet, generate a generic code for them
+    code = Math.floor(100000 + Math.random() * 900000).toString();
+    await AsyncStorage.setItem('@medicare_active_patient_code', code);
+    console.log("Auto-generated fallback Patient Code:", code);
   }
   return code;
 };

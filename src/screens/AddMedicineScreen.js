@@ -105,7 +105,7 @@ export default function AddMedicineScreen({ navigation }) {
           navigation.goBack();
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to save medicine.');
+      Alert.alert('Save Error', error.message || 'Failed to save medicine.');
     }
   };
 
