@@ -1,65 +1,87 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { db } from './firebaseConfig';
+import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 
-const STORAGE_KEY = '@medicare_medicines';
+const getActivePatientCode = async () => {
+  const code = await AsyncStorage.getItem('@medicare_active_patient_code');
+  if (!code) {
+    throw new Error("No active patient code found. Please navigate to the link screen first.");
+  }
+  return code;
+};
 
 export const saveMedicine = async (newMedicine) => {
   try {
-    const existingMedicinesJson = await AsyncStorage.getItem(STORAGE_KEY);
-    const existingMedicines = existingMedicinesJson ? JSON.parse(existingMedicinesJson) : [];
+    const patientCode = await getActivePatientCode();
     
-    // Add new medicine to the list with a unique ID
-    // Note: newMedicine now contains arrays for 'times' and 'days' which stringify automatically
-    const updatedMedicines = [...existingMedicines, { ...newMedicine, id: Date.now().toString() }];
+    // Add new medicine to the subcollection
+    const medicinesRef = collection(db, 'patients', patientCode, 'medicines');
+    await addDoc(medicinesRef, newMedicine);
     
-    // Save back to storage
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedMedicines));
-    return updatedMedicines;
+    // The previous implementation returned the whole array but it wasn't strictly necessary.
+    // Dashboard.js refetches on focus anyway.
+    return true;
   } catch (error) {
-    console.error('Error saving medicine:', error);
+    console.error('Error saving medicine to Firestore:', error);
     throw error;
   }
 };
 
 export const getMedicines = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
-    return jsonValue != null ? JSON.parse(jsonValue) : [];
+    const patientCode = await getActivePatientCode();
+    
+    const medicinesRef = collection(db, 'patients', patientCode, 'medicines');
+    const snapshot = await getDocs(medicinesRef);
+    
+    const medicines = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    }));
+    
+    return medicines;
   } catch (error) {
-    console.error('Error fetching medicines:', error);
-    throw error;
+    console.error('Error fetching medicines from Firestore:', error);
+    // If there's an error (like code missing on first ever boot before linking), return empty array
+    return [];
   }
 };
 
-const ADHERENCE_KEY = '@medicare_adherence';
-
 export const logAdherence = async (medicineId, status) => {
   try {
-    const existingLogsJson = await AsyncStorage.getItem(ADHERENCE_KEY);
-    const existingLogs = existingLogsJson ? JSON.parse(existingLogsJson) : [];
+    const patientCode = await getActivePatientCode();
     
     const newLog = {
-      id: Date.now().toString(),
       medicineId,
       status, // 'Took', 'Missed', 'Snoozed'
       timestamp: new Date().toISOString()
     };
     
-    const updatedLogs = [...existingLogs, newLog];
-    await AsyncStorage.setItem(ADHERENCE_KEY, JSON.stringify(updatedLogs));
+    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
+    await addDoc(logsRef, newLog);
     
-    return updatedLogs;
+    return true;
   } catch (error) {
-    console.error('Error logging adherence:', error);
+    console.error('Error logging adherence to Firestore:', error);
     throw error;
   }
 };
 
 export const getAdherenceLogs = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(ADHERENCE_KEY);
-    return jsonValue != null ? JSON.parse(jsonValue) : [];
+    const patientCode = await getActivePatientCode();
+    
+    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
+    const snapshot = await getDocs(logsRef);
+    
+    const logs = snapshot.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id
+    }));
+    
+    return logs;
   } catch (error) {
-    console.error('Error fetching adherence logs:', error);
-    throw error;
+    console.error('Error fetching adherence logs from Firestore:', error);
+    return [];
   }
 };

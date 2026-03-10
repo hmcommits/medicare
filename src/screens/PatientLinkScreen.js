@@ -1,13 +1,44 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function PatientLinkScreen({ navigation }) {
+  const [patientCode, setPatientCode] = useState('');
+
+  useEffect(() => {
+    const initializePatient = async () => {
+      try {
+        // Try to load an existing code so the patient doesn't get a new one every time
+        let existingCode = await AsyncStorage.getItem('@medicare_active_patient_code');
+        
+        if (!existingCode) {
+          // Generate a random 6-digit string
+          existingCode = Math.floor(100000 + Math.random() * 900000).toString();
+          // Store it locally 
+          await AsyncStorage.setItem('@medicare_active_patient_code', existingCode);
+        }
+        
+        // Format it with a space for readability on screen (e.g. "523 891")
+        const formattedCode = `${existingCode.slice(0, 3)} ${existingCode.slice(3, 6)}`;
+        setPatientCode(formattedCode);
+      } catch (error) {
+        console.error('Failed to initialize or fetch patient code:', error);
+      }
+    };
+
+    initializePatient();
+  }, []);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Your Pairing Code</Text>
       
       <View style={styles.codeContainer}>
-        <Text style={styles.codeText}>523 891</Text>
+        {patientCode ? (
+             <Text style={styles.codeText}>{patientCode}</Text>
+        ) : (
+            <Text style={styles.codeText}>... ...</Text>
+        )}
       </View>
       
       <Text style={styles.instructions}>

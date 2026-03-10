@@ -1,8 +1,23 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function GuardianLinkScreen({ navigation }) {
   const [code, setCode] = useState('');
+
+  const handleConnect = async () => {
+    // Strip spaces for clean storage e.g "523 891" -> "523891"
+    const cleanCode = code.replace(/\s/g, '');
+    
+    if (cleanCode.length === 6) {
+      try {
+        await AsyncStorage.setItem('@medicare_active_patient_code', cleanCode);
+        navigation.navigate('Dashboard', { role: 'guardian' });
+      } catch (error) {
+        console.error("Failed to save patient code for guardian locally", error);
+      }
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -23,14 +38,10 @@ export default function GuardianLinkScreen({ navigation }) {
       />
 
       <TouchableOpacity 
-        style={[styles.button, { backgroundColor: code.length >= 6 ? '#2ECC71' : '#95A5A6' }]}
-        onPress={() => {
-          if (code.length >= 6) {
-            navigation.navigate('Dashboard', { role: 'guardian' });
-          }
-        }}
+        style={[styles.button, { backgroundColor: code.replace(/\s/g, '').length === 6 ? '#2ECC71' : '#95A5A6' }]}
+        onPress={handleConnect}
         activeOpacity={0.8}
-        disabled={code.length < 6}
+        disabled={code.replace(/\s/g, '').length !== 6}
       >
         <Text style={styles.buttonText}>Connect to Patient</Text>
       </TouchableOpacity>
