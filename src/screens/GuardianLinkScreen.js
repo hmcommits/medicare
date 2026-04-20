@@ -1,20 +1,23 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { linkGuardianToPatient } from '../services/storageService';
 
 export default function GuardianLinkScreen({ navigation }) {
   const [code, setCode] = useState('');
 
   const handleConnect = async () => {
-    // Strip spaces for clean storage e.g "523 891" -> "523891"
     const cleanCode = code.replace(/\s/g, '');
     
     if (cleanCode.length === 6) {
       try {
-        await AsyncStorage.setItem('@medicare_active_patient_code', cleanCode);
-        navigation.navigate('Dashboard', { role: 'guardian' });
+        const success = await linkGuardianToPatient(cleanCode);
+        if (success) {
+          navigation.navigate('Dashboard', { role: 'guardian' });
+        } else {
+          Alert.alert("Link Failed", "Could not find a patient with that code.");
+        }
       } catch (error) {
-        console.error("Failed to save patient code for guardian locally", error);
+        Alert.alert("Link Failed", error.message);
       }
     }
   };
@@ -32,7 +35,7 @@ export default function GuardianLinkScreen({ navigation }) {
         placeholder="Enter 6-digit code"
         placeholderTextColor="#BDC3C7"
         keyboardType="number-pad"
-        maxLength={7} // Allowing space like '523 891'
+        maxLength={7}
         value={code}
         onChangeText={setCode}
       />

@@ -100,15 +100,7 @@ export default function App() {
               ...prev,
               [currentMedicine.id]: snoozeExpire
           }));
-
-          // The manual 10 second timeout triggers it again instantly for manual testing (optional, keeping as requested)
-          // Removing the setTimeout loop and letting the 5 min skip naturally re-evaluate it on the interval later.
-          // The interval loop won't pick it up for 5 mins though!
-          const snoozedMedicine = currentMedicine;
-          setTimeout(() => {
-            setCurrentMedicine(snoozedMedicine);
-            setReminderVisible(true);
-          }, 10000); 
+          setCurrentMedicine(null);
         } else {
           setCurrentMedicine(null);
         }

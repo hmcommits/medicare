@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getPatientCodeForCurrentUser } from '../services/storageService';
 
 export default function PatientLinkScreen({ navigation }) {
   const [patientCode, setPatientCode] = useState('');
@@ -8,21 +8,13 @@ export default function PatientLinkScreen({ navigation }) {
   useEffect(() => {
     const initializePatient = async () => {
       try {
-        // Try to load an existing code so the patient doesn't get a new one every time
-        let existingCode = await AsyncStorage.getItem('@medicare_active_patient_code');
-        
-        if (!existingCode) {
-          // Generate a random 6-digit string
-          existingCode = Math.floor(100000 + Math.random() * 900000).toString();
-          // Store it locally 
-          await AsyncStorage.setItem('@medicare_active_patient_code', existingCode);
+        const code = await getPatientCodeForCurrentUser();
+        if (code) {
+          const formattedCode = `${code.slice(0, 3)} ${code.slice(3, 6)}`;
+          setPatientCode(formattedCode);
         }
-        
-        // Format it with a space for readability on screen (e.g. "523 891")
-        const formattedCode = `${existingCode.slice(0, 3)} ${existingCode.slice(3, 6)}`;
-        setPatientCode(formattedCode);
       } catch (error) {
-        console.error('Failed to initialize or fetch patient code:', error);
+        console.error('Failed to fetch patient code:', error);
       }
     };
 
@@ -71,7 +63,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   codeContainer: {
-    backgroundColor: '#E8F8F5', // Light green background for contrast
+    backgroundColor: '#E8F8F5',
     paddingVertical: 20,
     paddingHorizontal: 40,
     borderRadius: 15,

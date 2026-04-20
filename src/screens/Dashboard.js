@@ -7,7 +7,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import { getMedicines, logAdherence, getAdherenceLogs, getWeeklyAdherenceData } from '../services/storageService';
-import ReminderModal from '../components/ReminderModal';
 import { LineChart } from 'react-native-chart-kit';
 
 export default function Dashboard({ route, navigation }) {
@@ -16,10 +15,6 @@ export default function Dashboard({ route, navigation }) {
   const [logs, setLogs] = useState([]);
   const [weeklyAdherence, setWeeklyAdherence] = useState(Array(7).fill(0));
   const [isEditMode, setIsEditMode] = useState(false);
-  
-  // Reminder Modal State
-  const [reminderVisible, setReminderVisible] = useState(false);
-  const [currentReminderMedicine, setCurrentReminderMedicine] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -148,7 +143,7 @@ export default function Dashboard({ route, navigation }) {
 
     const labels = last7Days.map(dateStr => {
       const d = new Date(dateStr);
-      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+      return ['S','M','T','W','T','F','S'][d.getDay()];
     });
 
     return {
@@ -158,6 +153,12 @@ export default function Dashboard({ route, navigation }) {
           data: weeklyAdherence,
           color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`, // MediCare Blue
           strokeWidth: 3
+        },
+        {
+          data: [100], // Hidden point to clamp Y-axis max to 100
+          withDots: false,
+          color: () => 'rgba(0, 0, 0, 0)',
+          strokeWidth: 0
         }
       ],
     };
@@ -165,37 +166,7 @@ export default function Dashboard({ route, navigation }) {
 
   // Testing function removed as requested
 
-  const handleReminderResponse = async (status) => {
-    try {
-      if (currentReminderMedicine) {
-        await logAdherence(currentReminderMedicine.id, status);
-        console.log(`Logged ${status} for ${currentReminderMedicine.name}`);
-        
-        // Refresh logs immediately so the Done badge updates if "Took" is clicked
-        const fetchedLogs = await getAdherenceLogs();
-        const fetchedWeeklyData = await getWeeklyAdherenceData();
-        
-        // Trigger smooth layout animation before updating state
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        
-        setLogs(fetchedLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-        setWeeklyAdherence(fetchedWeeklyData);
-
-        if (status === 'Snoozed') {
-          const snoozedMedicine = currentReminderMedicine;
-          setTimeout(() => {
-            setCurrentReminderMedicine(snoozedMedicine);
-            setReminderVisible(true);
-          }, 10000); // 10 seconds
-        }
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to log adherence.');
-    } finally {
-      setReminderVisible(false);
-      setCurrentReminderMedicine(null);
-    }
-  };
+  // Reminder logic handled globally in App.js
 
   return (
     <View style={styles.container}>
@@ -221,27 +192,44 @@ export default function Dashboard({ route, navigation }) {
             <Text style={styles.sectionTitle}>7-Day Adherence</Text>
             <View style={styles.chartContainer}>
               {logs.length > 0 ? (
-                <LineChart
-                  data={getLineChartData()}
-                  width={Dimensions.get("window").width - 50}
-                  height={220}
-                  yAxisSuffix="%"
-                  chartConfig={{
-                    backgroundColor: "#ffffff",
-                    backgroundGradientFrom: "#ffffff",
-                    backgroundGradientTo: "#ffffff",
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(52, 152, 219, ${opacity})`, // Translucent blue below
-                    labelColor: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
-                    propsForDots: {
-                      r: "5",
-                      strokeWidth: "2",
-                      stroke: "#2980b9"
-                    }
-                  }}
-                  bezier
-                  style={styles.chart}
-                />
+                <View>
+                  <LineChart
+                    data={getLineChartData()}
+                    width={Dimensions.get("window").width - 50}
+                    height={220}
+                    yAxisSuffix="%"
+                    fromZero={true}
+                    chartConfig={{
+                      backgroundColor: "#ffffff",
+                      backgroundGradientFrom: "#ffffff",
+                      backgroundGradientTo: "#ffffff",
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(52, 152, 219, ${opacity * 0.5})`, // Translucent blue below
+                      labelColor: (opacity = 1) => `rgba(44, 62, 80, ${opacity})`,
+                      propsForDots: {
+                        r: "5",
+                        strokeWidth: "2",
+                        stroke: "#2980b9"
+                      }
+                    }}
+                    bezier
+                    style={styles.chart}
+                  />
+                  <View style={styles.legendContainer}>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: '#2ECC71' }]} />
+                      <Text style={styles.legendText}>Took</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: '#E74C3C' }]} />
+                      <Text style={styles.legendText}>Missed</Text>
+                    </View>
+                    <View style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: '#3498DB' }]} />
+                      <Text style={styles.legendText}>Snoozed</Text>
+                    </View>
+                  </View>
+                </View>
               ) : (
                 <Text style={styles.noLogsText}>Not enough data to graph.</Text>
               )}
@@ -285,12 +273,6 @@ export default function Dashboard({ route, navigation }) {
         )}
 
       </ScrollView>
-
-      <ReminderModal
-        visible={reminderVisible}
-        medicine={currentReminderMedicine}
-        onResponse={handleReminderResponse}
-      />
     </View>
   );
 }
@@ -385,6 +367,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 15,
     padding: 15,
+    paddingBottom: 35, // Ensures last item isn't cut off by nav bar
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -417,6 +400,28 @@ const styles = StyleSheet.create({
   listContainer: {
     width: '100%',
     marginBottom: 20,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 5,
+    marginBottom: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+  },
+  legendText: {
+    fontSize: 14,
+    color: '#7F8C8D',
+    fontWeight: '600',
   },
   emptyState: {
     flex: 1,

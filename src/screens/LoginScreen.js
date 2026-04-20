@@ -1,35 +1,66 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { loginUser } from '../services/storageService';
 
 export default function LoginScreen({ navigation }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) return Alert.alert('Error', 'Missing email and password');
+    setLoading(true);
+    try {
+      const role = await loginUser(email, password);
+      navigation.navigate(role === 'patient' ? 'PatientLink' : 'GuardianLink');
+    } catch(e) {
+      Alert.alert('Login Failed', e.message);
+    }
+    setLoading(false);
+  }
+
+  const handleNavigateRegister = (role) => {
+    navigation.navigate('Register', { role });
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Welcome to MediCare</Text>
+      <Text style={styles.header}>MediCare</Text>
+      <Text style={styles.subtitle}>Welcome back</Text>
       
-      <Text style={styles.subtitle}>Please select your role</Text>
-
-      <TouchableOpacity 
-        style={[styles.button, styles.patientButton]}
-        onPress={async () => {
-          await AsyncStorage.setItem('@medicare_user_role', 'patient');
-          navigation.navigate('PatientLink');
-        }}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.buttonText}>Patient</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.button, styles.guardianButton]}
-        onPress={async () => {
-          await AsyncStorage.setItem('@medicare_user_role', 'guardian');
-          navigation.navigate('GuardianLink');
-        }}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.buttonText}>Guardian</Text>
-      </TouchableOpacity>
+      <TextInput 
+        style={styles.input} 
+        placeholder="Email" 
+        placeholderTextColor="#BDC3C7"
+        autoCapitalize="none" 
+        keyboardType="email-address"
+        value={email} onChangeText={setEmail} 
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="Password" 
+        placeholderTextColor="#BDC3C7"
+        secureTextEntry 
+        value={password} onChangeText={setPassword} 
+      />
+      
+      {loading ? <ActivityIndicator size="large" color="#3498DB" style={{marginTop: 20}} /> : (
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} activeOpacity={0.8}>
+            <Text style={styles.btnText}>Login</Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.orText}>OR CREATE NEW ACCOUNT</Text>
+          
+          <TouchableOpacity style={[styles.loginBtn, styles.patientBtn]} onPress={() => handleNavigateRegister('patient')} activeOpacity={0.8}>
+            <Text style={styles.btnText}>Register as Patient</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={[styles.loginBtn, styles.guardianBtn]} onPress={() => handleNavigateRegister('guardian')} activeOpacity={0.8}>
+            <Text style={styles.btnText}>Register as Guardian</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -37,48 +68,66 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F9FC', // Light background
+    backgroundColor: '#F7F9FC',
     justifyContent: 'center',
-    alignItems: 'center',
     padding: 20,
   },
   header: {
-    fontSize: 28,
+    fontSize: 42,
     fontWeight: 'bold',
     color: '#2C3E50',
-    marginBottom: 10,
+    marginBottom: 5,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 18,
     color: '#7F8C8D',
     marginBottom: 40,
+    textAlign: 'center',
   },
-  button: {
-    width: '100%',
+  input: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#E0E6ED',
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    fontSize: 18,
+    marginBottom: 20,
+    color: '#2C3E50',
+  },
+  buttonContainer: {
+    marginTop: 10,
+  },
+  loginBtn: {
+    backgroundColor: '#3498DB',
     paddingVertical: 18,
     borderRadius: 12,
-    marginBottom: 20,
     alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
   },
-  patientButton: {
-    backgroundColor: '#3498DB', // Blue for patient
+  patientBtn: {
+    backgroundColor: '#2ECC71',
   },
-  guardianButton: {
-    backgroundColor: '#2ECC71', // Green for guardian
+  guardianBtn: {
+    backgroundColor: '#9B59B6',
   },
-  buttonText: {
+  btnText: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
   },
+  orText: {
+    textAlign: 'center',
+    color: '#95A5A6',
+    fontWeight: 'bold',
+    marginBottom: 20,
+    marginTop: 10,
+    letterSpacing: 1,
+  }
 });

@@ -5,12 +5,18 @@ import Dashboard from '../screens/Dashboard';
 import PatientLinkScreen from '../screens/PatientLinkScreen';
 import GuardianLinkScreen from '../screens/GuardianLinkScreen';
 import AddMedicineScreen from '../screens/AddMedicineScreen';
+import RegisterScreen from '../screens/RegisterScreen';
 
 const Stack = createStackNavigator();
 
 export default function AppNavigator() {
   return (
     <Stack.Navigator initialRouteName="Login">
+      <Stack.Screen 
+        name="Register" 
+        component={RegisterScreen} 
+        options={({ route }) => ({ title: `Register as ${route.params?.role === 'patient' ? 'Patient' : 'Guardian'}` })}
+      />
       <Stack.Screen 
         name="Login" 
         component={LoginScreen} 

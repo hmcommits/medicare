@@ -84,8 +84,11 @@ export default function AddMedicineScreen({ navigation }) {
       return;
     }
 
-    // Convert date objects to ISO strings for consistent storage
-    const timesToSave = times.map(t => t.toISOString());
+    // Convert date objects to local ISO strings without the 'Z' (UTC marker) to preserve local time
+    const timesToSave = times.map(t => {
+      const pad = (n) => n.toString().padStart(2, '0');
+      return `2000-10-10T${pad(t.getHours())}:${pad(t.getMinutes())}:00`;
+    });
 
     const newMedicine = { 
       name: name.trim(), 

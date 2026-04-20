@@ -1,28 +1,92 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { db } from './firebaseConfig';
-import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
+import { db, auth } from './firebaseConfig';
+import { collection, addDoc, getDocs, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
-const getActivePatientCode = async () => {
-  let code = await AsyncStorage.getItem('@medicare_active_patient_code');
-  if (!code) {
-    // If the user hasn't visited the link screen yet, generate a generic code for them
-    code = Math.floor(100000 + Math.random() * 900000).toString();
-    await AsyncStorage.setItem('@medicare_active_patient_code', code);
-    console.log("Auto-generated fallback Patient Code:", code);
+export const loginUser = async (email, password) => {
+  const creds = await signInWithEmailAndPassword(auth, email, password);
+  
+  // Fetch user role
+  const userDoc = await getDoc(doc(db, 'users', creds.user.uid));
+  if (userDoc.exists()) {
+    const role = userDoc.data().role;
+    await AsyncStorage.setItem('@medicare_user_role', role);
+    if (role === 'patient') {
+      await AsyncStorage.setItem('@medicare_patient_uid', creds.user.uid);
+    }
+    return role;
   }
-  return code;
+  return 'patient';
+};
+
+export const registerUser = async (email, password, role) => {
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  const uid = userCredential.user.uid;
+  
+  await setDoc(doc(db, 'users', uid), { email, role });
+  await AsyncStorage.setItem('@medicare_user_role', role);
+
+  if (role === 'patient') {
+    let code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Collision check
+    let exists = true;
+    while(exists) {
+        const docRef = doc(db, 'patientCodes', code);
+        const docSnap = await getDoc(docRef);
+        if(!docSnap.exists()){
+            exists = false;
+        } else {
+            code = Math.floor(100000 + Math.random() * 900000).toString();
+        }
+    }
+    
+    await setDoc(doc(db, 'patientCodes', code), { patientUid: uid });
+    await setDoc(doc(db, 'users', uid), { code }, { merge: true });
+    await AsyncStorage.setItem('@medicare_patient_uid', uid);
+  }
+  
+  return userCredential;
+};
+
+export const getPatientCodeForCurrentUser = async () => {
+    if (!auth.currentUser) return null;
+    const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+    if (userDoc.exists()) {
+        return userDoc.data().code;
+    }
+    return null;
+}
+
+export const linkGuardianToPatient = async (code) => {
+    const docRef = doc(db, 'patientCodes', code);
+    const docSnap = await getDoc(docRef);
+    if(docSnap.exists()){
+        const pUid = docSnap.data().patientUid;
+        await AsyncStorage.setItem('@medicare_linked_patient_uid', pUid);
+        return true;
+    }
+    return false;
+}
+
+const getActivePatientUid = async () => {
+  const role = await AsyncStorage.getItem('@medicare_user_role');
+  if (role === 'guardian') {
+      const gUid = await AsyncStorage.getItem('@medicare_linked_patient_uid');
+      if (gUid) return gUid;
+      throw new Error("Guardian not linked to a patient yet.");
+  } else {
+      if(auth.currentUser) return auth.currentUser.uid;
+      const pUid = await AsyncStorage.getItem('@medicare_patient_uid');
+      if (pUid) return pUid;
+      throw new Error("Patient not authenticated.");
+  }
 };
 
 export const saveMedicine = async (newMedicine) => {
   try {
-    const patientCode = await getActivePatientCode();
-    
-    // Add new medicine to the subcollection
-    const medicinesRef = collection(db, 'patients', patientCode, 'medicines');
+    const pUid = await getActivePatientUid();
+    const medicinesRef = collection(db, 'patients', pUid, 'medicines');
     await addDoc(medicinesRef, newMedicine);
-    
-    // The previous implementation returned the whole array but it wasn't strictly necessary.
-    // Dashboard.js refetches on focus anyway.
     return true;
   } catch (error) {
     console.error('Error saving medicine to Firestore:', error);
@@ -32,89 +96,72 @@ export const saveMedicine = async (newMedicine) => {
 
 export const getMedicines = async () => {
   try {
-    const patientCode = await getActivePatientCode();
-    
-    const medicinesRef = collection(db, 'patients', patientCode, 'medicines');
+    const pUid = await getActivePatientUid();
+    const medicinesRef = collection(db, 'patients', pUid, 'medicines');
     const snapshot = await getDocs(medicinesRef);
     
-    const medicines = snapshot.docs.map(doc => ({
+    return snapshot.docs.map(doc => ({
       ...doc.data(),
       id: doc.id
     }));
-    
-    return medicines;
   } catch (error) {
-    console.error('Error fetching medicines from Firestore:', error);
-    // If there's an error (like code missing on first ever boot before linking), return empty array
+    console.error('Error fetching medicines:', error);
     return [];
   }
 };
 
 export const logAdherence = async (medicineId, status) => {
   try {
-    const patientCode = await getActivePatientCode();
-    
-    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
+    const pUid = await getActivePatientUid();
+    const logsRef = collection(db, 'patients', pUid, 'adherenceLogs');
     const snapshot = await getDocs(logsRef);
     
     const now = new Date();
-    const oneMinuteAgo = new Date(now.getTime() - 60000); // 1 minute window
+    const oneMinuteAgo = new Date(now.getTime() - 60000);
 
-    // Ensure we don't accidentally log the exact same adherence status for the same medicine in the same minute
     const duplicateExists = snapshot.docs.some(doc => {
       const log = doc.data();
       return log.medicineId === medicineId && new Date(log.timestamp) > oneMinuteAgo;
     });
 
-    if (duplicateExists) {
-      console.log(`Prevented duplicate adherence log for medicine ${medicineId} within 1 minute window.`);
-      return true; // Pretend it succeeded
-    }
+    if (duplicateExists) return true;
 
-    const newLog = {
+    await addDoc(logsRef, {
       medicineId,
-      status, // 'Took', 'Missed', 'Snoozed'
+      status, 
       timestamp: now.toISOString()
-    };
-    
-    await addDoc(logsRef, newLog);
+    });
     
     return true;
   } catch (error) {
-    console.error('Error logging adherence to Firestore:', error);
+    console.error('Error logging adherence:', error);
     throw error;
   }
 };
 
 export const getAdherenceLogs = async () => {
   try {
-    const patientCode = await getActivePatientCode();
-    
-    const logsRef = collection(db, 'patients', patientCode, 'adherenceLogs');
+    const pUid = await getActivePatientUid();
+    const logsRef = collection(db, 'patients', pUid, 'adherenceLogs');
     const snapshot = await getDocs(logsRef);
     
-    const logs = snapshot.docs.map(doc => ({
+    return snapshot.docs.map(doc => ({
       ...doc.data(),
       id: doc.id
     }));
-    
-    return logs;
   } catch (error) {
-    console.error('Error fetching adherence logs from Firestore:', error);
+    console.error('Error fetching logs:', error);
     return [];
   }
 };
 
-export const getWeeklyAdherenceData = async (patientCode) => {
+export const getWeeklyAdherenceData = async () => {
   try {
-    // If patientCode isn't explicitly passed, get the active one
-    const codeToUse = patientCode || await getActivePatientCode();
-    
-    const logsRef = collection(db, 'patients', codeToUse, 'adherenceLogs');
+    const pUid = await getActivePatientUid();
+    const logsRef = collection(db, 'patients', pUid, 'adherenceLogs');
     const snapshot = await getDocs(logsRef);
     const logs = snapshot.docs.map(doc => doc.data());
 
-    // Initialize array for the last 7 days
     const last7Days = [...Array(7)].map((_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - i);
@@ -130,7 +177,7 @@ export const getWeeklyAdherenceData = async (patientCode) => {
     });
 
   } catch (error) {
-    console.error('Error calculating weekly adherence data:', error);
+    console.error('Error calculating weekly data:', error);
     return Array(7).fill(0);
   }
 };
