@@ -11,7 +11,15 @@ const Stack = createStackNavigator();
 
 export default function AppNavigator() {
   return (
-    <Stack.Navigator initialRouteName="Login">
+    <Stack.Navigator
+      initialRouteName="Login"
+      screenOptions={{
+        headerStyle: { backgroundColor: '#1E293B' },
+        headerTintColor: '#F1F5F9',
+        headerTitleStyle: { fontWeight: '700' },
+        cardStyle: { backgroundColor: '#0F172A' },
+      }}
+    >
       <Stack.Screen 
         name="Register" 
         component={RegisterScreen} 

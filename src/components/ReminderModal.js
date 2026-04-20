@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function ReminderModal({ visible, medicine, onResponse }) {
   if (!medicine) return null;
@@ -12,36 +13,57 @@ export default function ReminderModal({ visible, medicine, onResponse }) {
       onRequestClose={() => onResponse('Snoozed')}
     >
       <View style={styles.overlay}>
-        <View style={styles.modalView}>
-          <Text style={styles.headerText}>Time to take your medicine!</Text>
-          <Text style={styles.medicineName}>{medicine.name}</Text>
-          <Text style={styles.dosageText}>Dosage: {medicine.dosage}</Text>
+        <View style={styles.sheet}>
 
-          <View style={styles.buttonContainer}>
+          {/* Pill Top Bar */}
+          <View style={styles.sheetHandle} />
+
+          {/* Icon */}
+          <View style={styles.iconRing}>
+            <MaterialCommunityIcons name="alarm" size={36} color="#00C9A7" />
+          </View>
+
+          <Text style={styles.headerText}>Time for your medicine!</Text>
+          <Text style={styles.medicineName}>{medicine.name}</Text>
+          <View style={styles.dosagePill}>
+            <MaterialCommunityIcons name="pill" size={15} color="#00C9A7" />
+            <Text style={styles.dosageText}>{medicine.dosage}</Text>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.buttonRow}>
+            {/* Missed */}
             <TouchableOpacity
-              style={[styles.button, styles.missedButton]}
+              style={styles.btnMissed}
               onPress={() => onResponse('Missed')}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>Missed</Text>
+              <MaterialCommunityIcons name="close" size={20} color="#F87171" />
+              <Text style={styles.btnMissedText}>Missed</Text>
             </TouchableOpacity>
 
+            {/* Took – Prominent center */}
             <TouchableOpacity
-              style={[styles.button, styles.tookButton]}
+              style={styles.btnTook}
               onPress={() => onResponse('Took')}
-              activeOpacity={0.9}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.buttonText, styles.tookButtonText]}>Took</Text>
+              <MaterialCommunityIcons name="check" size={26} color="#0F172A" />
+              <Text style={styles.btnTookText}>Took it!</Text>
             </TouchableOpacity>
 
+            {/* Snooze */}
             <TouchableOpacity
-              style={[styles.button, styles.snoozedButton]}
+              style={styles.btnSnooze}
               onPress={() => onResponse('Snoozed')}
               activeOpacity={0.8}
             >
-              <Text style={styles.buttonText}>Snoozed</Text>
+              <MaterialCommunityIcons name="alarm-snooze" size={20} color="#818CF8" />
+              <Text style={styles.btnSnoozeText}>Snooze</Text>
             </TouchableOpacity>
           </View>
+
+          <Text style={styles.snoozeNote}>Snooze reminds you again in 5 minutes</Text>
         </View>
       </View>
     </Modal>
@@ -51,76 +73,133 @@ export default function ReminderModal({ visible, medicine, onResponse }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)', 
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  modalView: {
-    margin: 20,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 30,
+  sheet: {
+    backgroundColor: '#1E293B',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 12,
+    paddingBottom: 40,
+    paddingHorizontal: 28,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    width: '90%',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#475569',
+    marginBottom: 24,
+  },
+  iconRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#00C9A71A',
+    borderWidth: 1.5,
+    borderColor: '#00C9A7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: '#00C9A7',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    elevation: 10,
   },
   headerText: {
-    fontSize: 22,
-    color: '#34495E',
-    marginBottom: 10,
+    fontSize: 15,
+    color: '#94A3B8',
+    marginBottom: 6,
     fontWeight: '600',
   },
   medicineName: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 5,
+    fontSize: 34,
+    fontWeight: '800',
+    color: '#F1F5F9',
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  dosagePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#00C9A71A',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    marginBottom: 32,
   },
   dosageText: {
-    fontSize: 20,
-    color: '#7F8C8D',
-    marginBottom: 30,
+    fontSize: 14,
+    color: '#00C9A7',
+    fontWeight: '700',
   },
-  buttonContainer: {
+  buttonRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    alignItems: 'flex-end', // Align bottoms so the middle button can pop up
-  },
-  button: {
-    borderRadius: 15,
-    paddingVertical: 15,
-    elevation: 2,
+    alignItems: 'flex-end',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    marginBottom: 16,
+  },
+  btnMissed: {
     flex: 1,
-    marginHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F871711A',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#F87171',
+    paddingVertical: 16,
+    gap: 4,
   },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 18,
+  btnMissedText: {
+    color: '#F87171',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  btnTook: {
+    flex: 1.4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00C9A7',
+    borderRadius: 20,
+    paddingVertical: 22,
+    gap: 4,
+    shadowColor: '#00C9A7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  btnTookText: {
+    color: '#0F172A',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  btnSnooze: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#818CF81A',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#818CF8',
+    paddingVertical: 16,
+    gap: 4,
+  },
+  btnSnoozeText: {
+    color: '#818CF8',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  snoozeNote: {
+    fontSize: 12,
+    color: '#475569',
     textAlign: 'center',
-  },
-  missedButton: {
-    backgroundColor: '#E74C3C', // Red
-    height: 60,
-  },
-  tookButton: {
-    backgroundColor: '#2ECC71', // Green
-    height: 80, // Taller and more prominent
-    marginHorizontal: 10,
-  },
-  tookButtonText: {
-    fontSize: 22, // Larger text
-  },
-  snoozedButton: {
-    backgroundColor: '#3498DB', // Blue
-    height: 60,
   },
 });
