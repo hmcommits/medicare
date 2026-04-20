@@ -2,10 +2,6 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert, Dimensions, ScrollView, LayoutAnimation, UIManager, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { getMedicines, logAdherence, getAdherenceLogs, getWeeklyAdherenceData } from '../services/storageService';
 import { LineChart } from 'react-native-chart-kit';
 
