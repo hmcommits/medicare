@@ -1,125 +1,116 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 import AppNavigator from './src/navigation/AppNavigator';
 import ReminderModal from './src/components/ReminderModal';
-import { logAdherence, getMedicines, getAdherenceLogs } from './src/services/storageService';
+import {
+  requestNotificationPermissions,
+  scheduleSnoozedReminder,
+} from './src/services/notificationService';
+import { logAdherence, savePushToken } from './src/services/storageService';
+import { LanguageProvider } from './src/contexts/LanguageContext';
+import Constants from 'expo-constants';
 
 export default function App() {
   const [reminderVisible, setReminderVisible] = useState(false);
   const [currentMedicine, setCurrentMedicine] = useState(null);
-  
-  // Store snoozed medicines with their expiration timestamp (5 mins)
-  const [snoozedMeds, setSnoozedMeds] = useState({});
+
+  const navigationRef = useRef(null);
 
   useEffect(() => {
-    let interval;
-
-    const checkAlarms = async () => {
-      if (reminderVisible) return;
-
-      try {
-        const userRole = await AsyncStorage.getItem('@medicare_user_role');
-        if (userRole !== 'patient') return; // Guardian view does not fire alarms
-
-        const medicines = await getMedicines();
-        if (!medicines || medicines.length === 0) return;
-
-        const logs = await getAdherenceLogs(); // Fetch logs to verify completion
-        
-        const now = new Date();
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
-        const currentDay = now.getDay(); 
-
-        for (const med of medicines) {
-            const daysToSchedule = Array.isArray(med.days) && med.days.length > 0 ? med.days : [0, 1, 2, 3, 4, 5, 6];
-            if (!daysToSchedule.includes(currentDay)) continue;
-            
-            if (!med.times || !Array.isArray(med.times)) continue;
-
-            // Check if this medicine is currently globally snoozed for 5 minutes
-            if (snoozedMeds[med.id] && now.getTime() < snoozedMeds[med.id]) {
-                continue; // Skip this medicine, it's snoozed
-            }
-
-            for (const timeStr of med.times) {
-                const medTime = new Date(timeStr);
-                
-                // If it matches the exact current minute (or we can check within a minute window)
-                if (medTime.getHours() === currentHour && medTime.getMinutes() === currentMinute) {
-                    
-                    // Verify the user hasn't already 'Took' or 'Missed' this medicine in the last hour
-                    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-                    const alreadyHandled = logs.some(log => 
-                        log.medicineId === med.id && 
-                        (log.status === 'Took' || log.status === 'Missed') && 
-                        new Date(log.timestamp) > oneHourAgo
-                    );
-
-                    if (!alreadyHandled) {
-                        setCurrentMedicine(med);
-                        setReminderVisible(true);
-                        return; // Show 1 modal at a time
-                    }
-                }
-            }
+    async function setupNotifications() {
+      // 1. Request OS notification permissions
+      const hasPerm = await requestNotificationPermissions();
+      
+      // 2. Register for Expo Push Token (for guardian high-fives)
+      if (hasPerm) {
+        try {
+          const projectId = Constants.expoConfig.extra.eas.projectId;
+          const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+          if (tokenData?.data) {
+            await savePushToken(tokenData.data);
+          }
+        } catch (err) {
+          console.warn('[App] Failed to get Expo Push Token:', err.message);
         }
-      } catch(e) { 
-        console.error('Error checking alarms', e);
       }
-    };
-
-    const now = new Date();
-    const msUntilNextMinute = (60 - now.getSeconds()) * 1000;
-    
-    const timeout = setTimeout(() => {
-        checkAlarms();
-        interval = setInterval(checkAlarms, 60000);
-    }, msUntilNextMinute);
-    
-    checkAlarms();
-    
-    return () => {
-        clearTimeout(timeout);
-        if(interval) clearInterval(interval);
     }
-  }, [reminderVisible, snoozedMeds]);
+    setupNotifications();
+
+    // Foreground notification listener
+    const foregroundSub = Notifications.addNotificationReceivedListener(notification => {
+      // If it's a milestone prompt or high-five, don't show the reminder modal
+      const data = notification.request.content.data;
+      if (data?.type === 'high_five' || data?.type === 'milestone_prompt' || data?.type === 'refill') {
+        return; // Let OS show the banner natively (though we told Expo not to show banners, wait we'll need to adjust handleNotification for this if we want them to show in foreground)
+      }
+
+      if (data?.medicineId) {
+        setCurrentMedicine({
+          id: data.medicineId,
+          name: data.medicineName ?? 'Medicine',
+          dosage: data.dosage ?? '',
+          scheduledTime: data.scheduledTime ?? null,
+        });
+        setReminderVisible(true);
+      }
+    });
+
+    // Background tap handler
+    const responseSub = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      
+      if (data?.type === 'milestone_prompt') {
+        // Simple alert on tap for now or handle inside Dashboard
+        return;
+      }
+      
+      if (data?.medicineId) {
+        setCurrentMedicine({
+          id: data.medicineId,
+          name: data.medicineName ?? 'Medicine',
+          dosage: data.dosage ?? '',
+          scheduledTime: data.scheduledTime ?? null,
+        });
+        setReminderVisible(true);
+      }
+    });
+
+    return () => {
+      foregroundSub.remove();
+      responseSub.remove();
+    };
+  }, []);
 
   const handleReminderResponse = async (status) => {
     setReminderVisible(false);
+    const med = currentMedicine;
+    setCurrentMedicine(null);
+
+    if (!med) return;
+
     try {
-      if (currentMedicine) {
-        await logAdherence(currentMedicine.id, status);
-        
-        if (status === 'Snoozed') {
-          // Add a 5 minute (300000ms) skip window for this specific medicine
-          const snoozeExpire = new Date().getTime() + 5 * 60 * 1000;
-          setSnoozedMeds(prev => ({
-              ...prev,
-              [currentMedicine.id]: snoozeExpire
-          }));
-          setCurrentMedicine(null);
-        } else {
-          setCurrentMedicine(null);
-        }
+      await logAdherence(med.id, status, med.scheduledTime);
+
+      if (status === 'Snoozed') {
+        await scheduleSnoozedReminder(med);
       }
     } catch (error) {
-      console.error('Failed to log adherence from app-level reminder', error);
+      console.error('[App] Failed to log adherence:', error);
     }
   };
 
   return (
-    <>
-      <NavigationContainer>
+    <LanguageProvider>
+      <NavigationContainer ref={navigationRef}>
         <AppNavigator />
       </NavigationContainer>
-      <ReminderModal 
-        visible={reminderVisible} 
-        medicine={currentMedicine} 
-        onResponse={handleReminderResponse} 
+      <ReminderModal
+        visible={reminderVisible}
+        medicine={currentMedicine}
+        onResponse={handleReminderResponse}
       />
-    </>
+    </LanguageProvider>
   );
 }
