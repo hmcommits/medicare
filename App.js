@@ -9,8 +9,15 @@ import {
   scheduleSnoozedReminder,
   IS_EXPO_GO,
 } from './src/services/notificationService';
-import { logAdherence, savePushToken } from './src/services/storageService';
+import { 
+  logAdherence, 
+  savePushToken, 
+  deleteAdherenceLog, 
+  decrementInventory, 
+  incrementInventory 
+} from './src/services/storageService';
 import { LanguageProvider } from './src/contexts/LanguageContext';
+import Toast from 'react-native-toast-message';
 
 // Lazy-load expo-notifications — same pattern as notificationService.js.
 // Static imports are always evaluated; require() respects the runtime guard.
@@ -100,13 +107,35 @@ export default function App() {
     if (!med) return;
 
     try {
-      await logAdherence(med.id, status, med.scheduledTime);
+      const result = await logAdherence(med.id, status, med.scheduledTime);
+      
+      if (status === 'Took') {
+        await decrementInventory(med.id, med.pillsPerDose || 1);
+      }
 
       if (status === 'Snoozed') {
         await scheduleSnoozedReminder(med);
+        Toast.show({ type: 'info', text1: 'Snoozed for 5 minutes' });
+      } else if (result && result.docId && !result.isDuplicate) {
+        // Show Undo toast for 5 seconds
+        Toast.show({
+          type: 'success',
+          text1: `Marked as ${status}`,
+          text2: 'Tap here to Undo',
+          visibilityTime: 5000,
+          onPress: async () => {
+            Toast.hide();
+            await deleteAdherenceLog(result.docId);
+            if (status === 'Took') {
+              await incrementInventory(med.id, med.pillsPerDose || 1);
+            }
+            Toast.show({ type: 'info', text1: 'Action Undone' });
+          }
+        });
       }
     } catch (error) {
       console.error('[App] Failed to log adherence:', error);
+      Toast.show({ type: 'error', text1: 'Error logging adherence' });
     }
   };
 
@@ -120,6 +149,7 @@ export default function App() {
         medicine={currentMedicine}
         onResponse={handleReminderResponse}
       />
+      <Toast />
     </LanguageProvider>
   );
 }

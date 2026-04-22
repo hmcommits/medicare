@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function ReminderModal({ visible, medicine, onResponse }) {
@@ -8,6 +9,15 @@ export default function ReminderModal({ visible, medicine, onResponse }) {
 
 
   if (!medicine) return null;
+
+  const handlePress = (status) => {
+    if (status === 'Took') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    onResponse(status);
+  };
 
   return (
     <Modal
@@ -34,17 +44,17 @@ export default function ReminderModal({ visible, medicine, onResponse }) {
 
           {/* Action Buttons */}
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.btnMissed} onPress={() => onResponse('Missed')}>
+            <TouchableOpacity style={styles.btnMissed} onPress={() => handlePress('Missed')}>
               <MaterialCommunityIcons name="close" size={20} color="#F87171" />
               <Text style={styles.btnMissedText}>Missed</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnTook} onPress={() => onResponse('Took')}>
+            <TouchableOpacity style={styles.btnTook} onPress={() => handlePress('Took')}>
               <MaterialCommunityIcons name="check" size={26} color="#0F172A" />
               <Text style={styles.btnTookText}>Took it!</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnSnooze} onPress={() => onResponse('Snoozed')}>
+            <TouchableOpacity style={styles.btnSnooze} onPress={() => handlePress('Snoozed')}>
               <MaterialCommunityIcons name="alarm-snooze" size={20} color="#818CF8" />
               <Text style={styles.btnSnoozeText}>Snooze</Text>
             </TouchableOpacity>

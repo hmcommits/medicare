@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LineChart } from 'react-native-chart-kit';
+import ConfettiCannon from 'react-native-confetti-cannon';
 
 import {
   getActivePatientUid, subscribeMedicines, subscribeLogs,
@@ -38,10 +39,10 @@ export default function Dashboard({ route, navigation }) {
   const [streakData, setStreakData] = useState({ streak: 0, freezeUsed: false, milestoneReached: null });
   const [unlockedBadges, setUnlockedBadges] = useState([]);
   const [freezeContext, setFreezeContext] = useState({ count: 1, resetMonth: '' });
+  const confettiRef = useRef(null);
 
   // Fetch gamification base data
   const loadGamificationContext = async () => {
-    if (role !== 'patient') return;
     const freezeInfo = await getStreakFreeze();
     setFreezeContext(freezeInfo);
   };
@@ -69,22 +70,24 @@ export default function Dashboard({ route, navigation }) {
             setLogs(fetchedLogs);
             setWeeklyAdherence(getWeeklyAdherenceData(fetchedLogs));
             
-            // Recalculate gamification on new logs
+            // Recalculate gamification on new logs for display (both roles)
+            const freezeInfo = await getStreakFreeze();
+            const { streak, freezeUsed, milestoneReached } = computeStreak(fetchedLogs, freezeInfo.count > 0);
+            
+            setStreakData({ streak, freezeUsed, milestoneReached });
+            
+            // Badges
+            const bdgIds = computeBadges(fetchedLogs, streak);
+            setUnlockedBadges(bdgIds);
+            
+            // Only the patient should trigger database mutations and notifications
             if (role === 'patient') {
-              const freezeInfo = await getStreakFreeze();
-              const { streak, freezeUsed, milestoneReached } = computeStreak(fetchedLogs, freezeInfo.count > 0);
-              
-              setStreakData({ streak, freezeUsed, milestoneReached });
-              
               if (freezeUsed && freezeInfo.count > 0) {
                 await consumeStreakFreeze();
               }
 
-              // Badges
-              const bdgIds = computeBadges(fetchedLogs, streak);
               if (bdgIds.length > 0) {
                 bdgIds.forEach(id => saveAchievement(id));
-                setUnlockedBadges(bdgIds);
               }
               
               // Notify guardians if milestone hit today
@@ -94,6 +97,9 @@ export default function Dashboard({ route, navigation }) {
                 const alreadySent = await AsyncStorage.getItem(cacheKey);
                 
                 if (!alreadySent) {
+                  // Trigger local confetti celebration
+                  if (confettiRef.current) confettiRef.current.start();
+
                   const tokens = await getGuardianPushTokens();
                   if (tokens.length > 0) {
                     await notifyGuardiansOfMilestone(tokens, milestoneReached, t);
@@ -308,6 +314,17 @@ export default function Dashboard({ route, navigation }) {
     <View style={styles.root}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.container}>
         
+        {/* Milestone Confetti Celebration */}
+        {streakData.milestoneReached && (
+          <ConfettiCannon
+            ref={confettiRef}
+            count={100}
+            origin={{ x: width / 2, y: -20 }}
+            autoStart={false}
+            fadeOut={true}
+          />
+        )}
+
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -349,16 +366,40 @@ export default function Dashboard({ route, navigation }) {
           </View>
         </View>
 
-        {role === 'patient' && (
-          <StreakBanner 
-            streak={streakData.streak} 
-            freezeUsed={streakData.freezeUsed} 
-            badges={unlockedBadges.map(id => BADGE_CONFIG[id])} 
-            milestoneReached={streakData.milestoneReached}
-          />
-        )}
+        {/* Gamification Banner - Visible to both patient and guardian */}
+        <StreakBanner 
+          streak={streakData.streak} 
+          freezeUsed={streakData.freezeUsed} 
+          badges={unlockedBadges.map(id => BADGE_CONFIG[id])} 
+          milestoneReached={streakData.milestoneReached}
+        />
 
-        {/* Stats Row & Charts remain mostly unchanged */}
+        {/* Adherence Chart */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('adherenceChart') || '7-Day Adherence'}</Text>
+          <View style={{ marginTop: 16, alignItems: 'center' }}>
+            <LineChart
+              data={getLineChartData()}
+              width={width - 88}
+              height={180}
+              withInnerLines={false}
+              withOuterLines={false}
+              chartConfig={{
+                backgroundColor: '#1E293B',
+                backgroundGradientFrom: '#1E293B',
+                backgroundGradientTo: '#1E293B',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(0, 201, 167, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
+                propsForDots: { r: '4', strokeWidth: '2', stroke: '#0F172A' },
+              }}
+              bezier
+              style={{ borderRadius: 16 }}
+            />
+          </View>
+        </View>
+
+        {/* Scheduled Medicines */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{t('scheduledMedicines')}</Text>

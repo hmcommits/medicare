@@ -202,20 +202,35 @@ export const logAdherence = async (medicineId, status, scheduledTime = null) => 
     const dupSnap = await getDocs(dupQuery);
     if (!dupSnap.empty) {
       console.log('[logAdherence] Duplicate within 60s — skipping.');
-      return true;
+      return { success: true, docId: dupSnap.docs[0].id, isDuplicate: true };
     }
 
-    await addDoc(logsRef, {
+    const docRef = await addDoc(logsRef, {
       medicineId,
       scheduledTime: scheduledTime ?? '',
       status,
       timestamp: now.toISOString(),
     });
 
-    return true;
+    return { success: true, docId: docRef.id };
   } catch (error) {
     console.error('Error logging adherence:', error);
     throw error;
+  }
+};
+
+/**
+ * Deletes an adherence log by its Firestore ID. Used for the "Undo" feature.
+ * @param {string} logId
+ */
+export const deleteAdherenceLog = async (logId) => {
+  try {
+    const pUid = await getActivePatientUid();
+    await deleteDoc(doc(db, 'patients', pUid, 'adherenceLogs', logId));
+    return true;
+  } catch (error) {
+    console.error('Error deleting adherence log:', error);
+    return false;
   }
 };
 
@@ -274,6 +289,19 @@ export const decrementInventory = async (medicineId, pillsPerDose = 1) => {
     await updateDoc(medRef, { quantity: increment(-Math.abs(pillsPerDose)) });
   } catch (error) {
     console.error('[storageService] Error decrementing inventory:', error);
+  }
+};
+
+/**
+ * Atomically increments a medicine's quantity (used when undoing a dose).
+ */
+export const incrementInventory = async (medicineId, pillsPerDose = 1) => {
+  try {
+    const pUid = await getActivePatientUid();
+    const medRef = doc(db, 'patients', pUid, 'medicines', medicineId);
+    await updateDoc(medRef, { quantity: increment(Math.abs(pillsPerDose)) });
+  } catch (error) {
+    console.error('[storageService] Error incrementing inventory:', error);
   }
 };
 
