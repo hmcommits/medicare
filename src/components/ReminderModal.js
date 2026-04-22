@@ -1,51 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { useLanguage } from '../contexts/LanguageContext';
-import { parseVoiceCommand } from '../services/voiceService';
-import { LOCALE_MAP } from '../constants/voiceKeywords';
 
 export default function ReminderModal({ visible, medicine, onResponse }) {
-  const { t, language } = useLanguage();
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
+  const { t } = useLanguage();
 
-  useSpeechRecognitionEvent('start', () => setIsListening(true));
-  useSpeechRecognitionEvent('end', () => setIsListening(false));
-  useSpeechRecognitionEvent('error', () => setIsListening(false));
-  
-  useSpeechRecognitionEvent('result', (event) => {
-    const text = event.results[0]?.transcript || '';
-    setTranscript(text);
-    
-    // Parse the command (we pass a single medicine array since context is limited)
-    const { action } = parseVoiceCommand(text, medicine ? [{...medicine}] : []);
-    
-    if (action === 'took') {
-      ExpoSpeechRecognitionModule.stop();
-      onResponse('Took');
-    } else if (action === 'missed') {
-      ExpoSpeechRecognitionModule.stop();
-      onResponse('Missed');
-    } else if (action === 'snoozed') {
-      ExpoSpeechRecognitionModule.stop();
-      onResponse('Snoozed');
-    }
-  });
-
-  const handleStartVoice = () => {
-    setTranscript('');
-    ExpoSpeechRecognitionModule.start({
-      lang: LOCALE_MAP[language] || 'en-US',
-      interimResults: true,
-      maxAlternatives: 1,
-    });
-  };
-
-  const handleStopVoice = () => {
-    ExpoSpeechRecognitionModule.stop();
-  };
 
   if (!medicine) return null;
 
@@ -71,30 +31,6 @@ export default function ReminderModal({ visible, medicine, onResponse }) {
             <Text style={styles.dosageText}>{medicine.dosage}</Text>
           </View>
 
-          {/* Voice Assistant Area */}
-          <View style={styles.voiceArea}>
-            {isListening ? (
-              <View style={styles.listeningContainer}>
-                <ActivityIndicator color="#8B5CF6" size="small" />
-                <Text style={styles.transcriptText}>{transcript || t('listening')}</Text>
-              </View>
-            ) : (
-              <Text style={styles.voiceInstruction}>Hold mic & say "Took it" or "Snooze"</Text>
-            )}
-            
-            <TouchableOpacity
-              style={[styles.micBtn, isListening && styles.micBtnActive]}
-              onPressIn={handleStartVoice}
-              onPressOut={handleStopVoice}
-              activeOpacity={0.8}
-            >
-              <MaterialCommunityIcons 
-                name={isListening ? "microphone" : "microphone-outline"} 
-                size={28} 
-                color={isListening ? "#FFF" : "#8B5CF6"} 
-              />
-            </TouchableOpacity>
-          </View>
 
           {/* Action Buttons */}
           <View style={styles.buttonRow}>
@@ -152,24 +88,6 @@ const styles = StyleSheet.create({
   },
   dosageText: { fontSize: 14, color: '#00C9A7', fontWeight: '700' },
   
-  voiceArea: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  voiceInstruction: { fontSize: 13, color: '#94A3B8', marginBottom: 12 },
-  listeningContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  transcriptText: { color: '#8B5CF6', fontSize: 14, fontWeight: '600', fontStyle: 'italic' },
-  micBtn: {
-    width: 60, height: 60, borderRadius: 30, backgroundColor: '#8B5CF61A',
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#8B5CF6'
-  },
-  micBtnActive: { backgroundColor: '#8B5CF6', transform: [{ scale: 1.1 }] },
 
   buttonRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: 12, width: '100%', marginBottom: 16 },
   btnMissed: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F871711A', borderRadius: 16, borderWidth: 1.5, borderColor: '#F87171', paddingVertical: 16, gap: 4 },

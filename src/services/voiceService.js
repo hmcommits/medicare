@@ -10,8 +10,7 @@
  */
 
 import * as Speech from 'expo-speech';
-import { distance } from 'fastest-levenshtein';
-import VOICE_KEYWORDS, { LOCALE_MAP } from '../constants/voiceKeywords';
+import { LOCALE_MAP } from '../constants/voiceKeywords';
 
 // ─── TTS ─────────────────────────────────────────────────────────────────────
 
@@ -74,95 +73,4 @@ export function buildTodaysMedicineScript(medicines, logs, t) {
   );
 }
 
-// ─── Command Parser ───────────────────────────────────────────────────────────
 
-/**
- * Normalizes a string for keyword matching.
- * Lowercases, removes punctuation, trims extra whitespace.
- */
-function normalize(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Checks if a normalized transcript contains any keyword from an array.
- * Supports partial substring matching.
- */
-function containsKeyword(normalized, keywords) {
-  return keywords.some(kw => normalized.includes(kw));
-}
-
-/**
- * Fuzzy-matches a spoken word against a list of medicine names.
- * Uses normalized Levenshtein distance (0 = perfect match, 1 = completely different).
- * Returns the best match if confidence ≥ 0.55 (45% of chars can differ).
- *
- * @param {string} spokenText - raw STT output
- * @param {string[]} medicineNames - names from the user's medicines collection
- * @returns {{ matched: string|null, confidence: number }}
- */
-export function fuzzyMatchMedicine(spokenText, medicineNames) {
-  if (!spokenText || medicineNames.length === 0) return { matched: null, confidence: 0 };
-
-  const normalizedSpoken = normalize(spokenText);
-  let best = { matched: null, confidence: 0 };
-
-  for (const medName of medicineNames) {
-    const normalizedMed = normalize(medName);
-
-    // Try full name comparison
-    const fullDist = distance(normalizedSpoken, normalizedMed);
-    const maxLen = Math.max(normalizedSpoken.length, normalizedMed.length);
-    const fullConf = maxLen === 0 ? 0 : 1 - fullDist / maxLen;
-
-    // Also try individual word comparison (STT often catches just the drug name)
-    const words = normalizedSpoken.split(' ');
-    const medWords = normalizedMed.split(' ');
-    let wordConf = 0;
-    for (const w of words) {
-      for (const mw of medWords) {
-        const wLen = Math.max(w.length, mw.length);
-        if (wLen < 3) continue; // skip very short words
-        const conf = 1 - distance(w, mw) / wLen;
-        if (conf > wordConf) wordConf = conf;
-      }
-    }
-
-    const confidence = Math.max(fullConf, wordConf);
-    if (confidence > best.confidence) {
-      best = { matched: medName, confidence };
-    }
-  }
-
-  return best.confidence >= 0.55 ? best : { matched: null, confidence: best.confidence };
-}
-
-/**
- * Parses a voice command transcript into an action.
- *
- * @param {string} spokenText - raw STT transcript
- * @param {Array<{id:string, name:string}>} medicines - user's medicines
- * @returns {{ action: 'took'|'missed'|'snoozed'|null, medicine: object|null }}
- */
-export function parseVoiceCommand(spokenText, medicines) {
-  if (!spokenText) return { action: null, medicine: null };
-
-  const normalized = normalize(spokenText);
-
-  // Detect action
-  let action = null;
-  if (containsKeyword(normalized, VOICE_KEYWORDS.took)) action = 'took';
-  else if (containsKeyword(normalized, VOICE_KEYWORDS.missed)) action = 'missed';
-  else if (containsKeyword(normalized, VOICE_KEYWORDS.snoozed)) action = 'snoozed';
-
-  // Detect medicine name via fuzzy match
-  const medicineNames = medicines.map(m => m.name);
-  const { matched } = fuzzyMatchMedicine(normalized, medicineNames);
-  const medicine = matched ? medicines.find(m => normalize(m.name) === normalize(matched)) ?? null : null;
-
-  return { action, medicine };
-}

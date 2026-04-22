@@ -21,9 +21,7 @@ import {
 import { computeStreak, computeBadges, BADGE_CONFIG, STREAK_MILESTONES } from '../services/streakService';
 import { useLanguage } from '../contexts/LanguageContext';
 import StreakBanner from '../components/StreakBanner';
-import { speak, stopSpeaking, buildTodaysMedicineScript, parseVoiceCommand } from '../services/voiceService';
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
-import { LOCALE_MAP } from '../constants/voiceKeywords';
+import { speak, stopSpeaking, buildTodaysMedicineScript } from '../services/voiceService';
 
 const { width } = Dimensions.get('window');
 
@@ -40,24 +38,6 @@ export default function Dashboard({ route, navigation }) {
   const [streakData, setStreakData] = useState({ streak: 0, freezeUsed: false, milestoneReached: null });
   const [unlockedBadges, setUnlockedBadges] = useState([]);
   const [freezeContext, setFreezeContext] = useState({ count: 1, resetMonth: '' });
-  
-  // Voice states
-  const [isListening, setIsListening] = useState(false);
-  
-  // Handlers for voice STT via hook
-  useSpeechRecognitionEvent('start', () => setIsListening(true));
-  useSpeechRecognitionEvent('end', () => setIsListening(false));
-  useSpeechRecognitionEvent('error', () => setIsListening(false));
-  
-  useSpeechRecognitionEvent('result', (event) => {
-    const text = event.results[0]?.transcript || '';
-    const { action, medicine } = parseVoiceCommand(text, medicines);
-    if (action === 'took' && medicine) {
-      ExpoSpeechRecognitionModule.stop();
-      Alert.alert(t('voiceSuccessTitle'), t('voiceSuccessBody', medicine.name));
-      // Real app would auto trigger the logAdherence for this medicine here.
-    }
-  });
 
   // Fetch gamification base data
   const loadGamificationContext = async () => {
@@ -200,24 +180,9 @@ export default function Dashboard({ route, navigation }) {
   };
 
   const handleVoiceAssistant = async () => {
-    if (isListening) {
-      await stopSpeaking();
-      ExpoSpeechRecognitionModule.stop();
-      return;
-    }
-    
     // First, read out the pending medicines
     const script = buildTodaysMedicineScript(medicines, logs, t);
     await speak(script, language);
-    
-    // Then start listening for commands
-    setTimeout(() => {
-      ExpoSpeechRecognitionModule.start({
-        lang: LOCALE_MAP[language] || 'en-US',
-        interimResults: true,
-        maxAlternatives: 1,
-      });
-    }, 3000); // Wait roughly for TTS to finish
   };
 
   // ── Computed stats
@@ -355,10 +320,10 @@ export default function Dashboard({ route, navigation }) {
           <View style={styles.headerActions}>
             {role === 'patient' && (
               <TouchableOpacity 
-                style={[styles.voiceBtn, isListening && styles.voiceBtnActive]} 
+                style={styles.voiceBtn} 
                 onPress={handleVoiceAssistant}
               >
-                <MaterialCommunityIcons name={isListening ? "ear-hearing" : "microphone"} size={22} color={isListening ? "#00C9A7" : "#F1F5F9"} />
+                <MaterialCommunityIcons name="volume-high" size={22} color="#F1F5F9" />
               </TouchableOpacity>
             )}
             {role === 'guardian' && (
@@ -370,6 +335,14 @@ export default function Dashboard({ route, navigation }) {
                 <Text style={[styles.editToggleText, isEditMode && { color: '#0F172A' }]}>{isEditMode ? 'Done' : 'Edit'}</Text>
               </TouchableOpacity>
             )}
+            {/* Profile icon */}
+            <TouchableOpacity 
+              style={styles.profileBtn} 
+              onPress={() => navigation.navigate('Profile')}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="account-circle-outline" size={26} color="#F1F5F9" />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
               <MaterialCommunityIcons name="logout" size={20} color="#F87171" />
             </TouchableOpacity>
@@ -430,6 +403,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   voiceBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
   voiceBtnActive: { borderColor: '#00C9A7', backgroundColor: '#00C9A733' },
+  profileBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E293B', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
   logoutBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F871711A', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F87171' },
   editToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#00C9A71A', paddingHorizontal: 16, height: 40, borderRadius: 20, borderWidth: 1, borderColor: '#00C9A7' },
   editToggleActive: { backgroundColor: '#00C9A7' },

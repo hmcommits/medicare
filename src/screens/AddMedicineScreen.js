@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform, ActivityIndicator } from 'react-native';
+import {
+  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  ScrollView, Alert, Platform, ActivityIndicator
+} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { saveMedicine } from '../services/storageService';
@@ -8,148 +11,110 @@ import { searchMedicineNames, getMedicineInfo } from '../services/medicineInfoSe
 import { useLanguage } from '../contexts/LanguageContext';
 
 const DAYS_OF_WEEK = [
-  { label: 'S', fullLabel: 'Sun', value: 0 },
-  { label: 'M', fullLabel: 'Mon', value: 1 },
-  { label: 'T', fullLabel: 'Tue', value: 2 },
-  { label: 'W', fullLabel: 'Wed', value: 3 },
-  { label: 'T', fullLabel: 'Thu', value: 4 },
-  { label: 'F', fullLabel: 'Fri', value: 5 },
-  { label: 'S', fullLabel: 'Sat', value: 6 },
+  { label: 'S', value: 0 }, { label: 'M', value: 1 }, { label: 'T', value: 2 },
+  { label: 'W', value: 3 }, { label: 'T', value: 4 }, { label: 'F', value: 5 },
+  { label: 'S', value: 6 },
+];
+
+// Dose types — determines how inventory is tracked
+const DOSE_TYPES = [
+  { key: 'tablet',  label: 'Tablet / Capsule', icon: 'pill',        unit: 'tablets', doseUnit: 'tablet',  defaultStock: '60',  defaultDose: '1'  },
+  { key: 'syrup',   label: 'Syrup / Tonic',    icon: 'bottle-tonic',unit: 'ml',      doseUnit: 'ml',      defaultStock: '200', defaultDose: '10' },
 ];
 
 export default function AddMedicineScreen({ navigation }) {
   const { t } = useLanguage();
-  const [name, setName] = useState('');
-  const [dosage, setDosage] = useState('');
-  const [times, setTimes] = useState([new Date()]);
+
+  // Basic fields
+  const [name, setName]         = useState('');
+  const [dosage, setDosage]     = useState('');
+  const [times, setTimes]       = useState([new Date()]);
   const [showPicker, setShowPicker] = useState([false]);
   const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
-  const [nameFocused, setNameFocused] = useState(false);
+  const [nameFocused, setNameFocused]   = useState(false);
   const [dosageFocused, setDosageFocused] = useState(false);
 
-  // Auto-fill states
-  const [suggestions, setSuggestions] = useState([]);
-  const [drugInfo, setDrugInfo] = useState(null);
-  const [fetchingSuggestions, setFetchingSuggestions] = useState(false);
+  // Autofill
+  const [suggestions, setSuggestions]   = useState([]);
+  const [drugInfo, setDrugInfo]         = useState(null);
+  const [fetchingSugg, setFetchingSugg] = useState(false);
   const [fetchingInfo, setFetchingInfo] = useState(false);
-  const searchTimeoutRef = useRef(null);
+  const debounceRef = useRef(null);
 
-  // Inventory states
-  const [enableInventory, setEnableInventory] = useState(false);
-  const [quantity, setQuantity] = useState('');
-  const [pillsPerDose, setPillsPerDose] = useState('1');
-  const [leadTime, setLeadTime] = useState(t('defaultLeadTime'));
+  // Inventory
+  const [trackInventory, setTrackInventory] = useState(false);
+  const [doseType, setDoseType]   = useState('tablet'); // 'tablet' | 'syrup'
+  const [stockAmt, setStockAmt]   = useState('');
+  const [doseAmt, setDoseAmt]     = useState('1');
+  const [leadTime, setLeadTime]   = useState('7');
 
-  // Handle auto-complete debounce
+  const activeDoseType = DOSE_TYPES.find(d => d.key === doseType);
+
+  // ── Autofill debounce ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    if (!name.trim() || name.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-    setFetchingSuggestions(true);
-    searchTimeoutRef.current = setTimeout(async () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!name.trim() || name.length < 2) { setSuggestions([]); return; }
+    setFetchingSugg(true);
+    debounceRef.current = setTimeout(async () => {
       const results = await searchMedicineNames(name);
       setSuggestions(results);
-      setFetchingSuggestions(false);
+      setFetchingSugg(false);
     }, 400);
-
-    return () => clearTimeout(searchTimeoutRef.current);
+    return () => clearTimeout(debounceRef.current);
   }, [name]);
 
-  const handleSelectSuggestion = async (suggestion) => {
-    setName(suggestion);
+  const handleSelectSuggestion = async (sg) => {
+    setName(sg);
     setSuggestions([]);
-    
-    // Fetch drug info automatically
     setFetchingInfo(true);
-    const info = await getMedicineInfo(suggestion);
-    if (info) {
-      setDrugInfo(info);
-      // Auto-fill dosage if empty
-      if (!dosage && info.dosage) {
-        setDosage(info.dosage.split('.')[0] || info.dosage);
-      }
-    }
+    const info = await getMedicineInfo(sg);
+    if (info) setDrugInfo(info);
+    // NOTE: We intentionally do NOT auto-fill the Strength/Dosage field.
+    // OpenFDA returns clinical sentences, not a usable strength value.
+    // The user should enter e.g. "500mg", "1 tablet", "10ml" themselves.
     setFetchingInfo(false);
   };
 
-  const clearInfo = () => {
-    setDrugInfo(null);
-  };
-
+  // ── Time helpers ───────────────────────────────────────────────────────────
   const handleTimeChange = (event, selectedTime, index) => {
-    const newShowPicker = [...showPicker];
-    newShowPicker[index] = false;
-    setShowPicker(newShowPicker);
-    if (selectedTime) {
-      const newTimes = [...times];
-      newTimes[index] = selectedTime;
-      setTimes(newTimes);
-    }
+    const next = [...showPicker]; next[index] = false; setShowPicker(next);
+    if (selectedTime) { const t = [...times]; t[index] = selectedTime; setTimes(t); }
   };
+  const formatTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const addAnotherTime  = () => { setTimes([...times, new Date()]); setShowPicker([...showPicker, false]); };
+  const removeTime = (i) => { setTimes(times.filter((_, idx) => idx !== i)); setShowPicker(showPicker.filter((_, idx) => idx !== i)); };
 
-  const addAnotherTime = () => {
-    setTimes([...times, new Date()]);
-    setShowPicker([...showPicker, false]);
-  };
-
-  const removeTime = (indexToRemove) => {
-    setTimes(times.filter((_, index) => index !== indexToRemove));
-    setShowPicker(showPicker.filter((_, index) => index !== indexToRemove));
-  };
-
-  const toggleDay = (dayValue) => {
-    setSelectedDays(prev =>
-      prev.includes(dayValue)
-        ? prev.filter(d => d !== dayValue)
-        : [...prev, dayValue].sort()
-    );
-  };
-
-  const formatTime = (date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
+  // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!name.trim() || !dosage.trim()) {
-      Alert.alert(t('missingInfo'), t('missingInfo'));
-      return;
-    }
-    if (selectedDays.length === 0) {
-      Alert.alert(t('missingInfo'), 'Please select at least one day.');
-      return;
-    }
-    if (times.length === 0) {
-      Alert.alert(t('missingInfo'), 'Please add at least one time.');
-      return;
-    }
+    if (!name.trim() || !dosage.trim()) { Alert.alert('Missing Info', 'Please enter name and dosage.'); return; }
+    if (!selectedDays.length) { Alert.alert('Missing Info', 'Select at least one day.'); return; }
+    if (!times.length)        { Alert.alert('Missing Info', 'Add at least one time.'); return; }
 
-    const pad = (n) => n.toString().padStart(2, '0');
+    const pad = (n) => String(n).padStart(2, '0');
     const timesToSave = times.map(t => `2000-10-10T${pad(t.getHours())}:${pad(t.getMinutes())}:00`);
 
     const newMedicine = {
-      name: name.trim(),
-      dosage: dosage.trim(),
-      times: timesToSave,
-      days: selectedDays,
+      name: name.trim(), dosage: dosage.trim(),
+      times: timesToSave, days: selectedDays,
     };
 
-    if (enableInventory && quantity && pillsPerDose) {
-      newMedicine.quantity = parseInt(quantity, 10) || 0;
-      newMedicine.pillsPerDose = parseInt(pillsPerDose, 10) || 1;
+    if (trackInventory) {
+      newMedicine.doseType     = doseType;
+      newMedicine.quantity     = parseFloat(stockAmt) || 0;
+      newMedicine.doseAmount   = parseFloat(doseAmt)  || (doseType === 'tablet' ? 1 : 10);
+      newMedicine.doseUnit     = activeDoseType.doseUnit;
       newMedicine.leadTimeDays = parseInt(leadTime, 10) || 7;
     }
 
     try {
-      const savedMedicine = await saveMedicine(newMedicine);
-      await scheduleMedicineNotification(savedMedicine);
-      Alert.alert('Success!', `${name.trim()} has been added to your schedule.`, [
+      const saved = await saveMedicine(newMedicine);
+      await scheduleMedicineNotification(saved);
+      Alert.alert('Saved! ✅', `${name.trim()} added to your schedule.`, [
         { text: 'OK', onPress: () => navigation.goBack() }
       ]);
       if (Platform.OS === 'web') navigation.goBack();
-    } catch (error) {
-      Alert.alert('Save Error', error.message || 'Failed to save medicine.');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Could not save medicine.');
     }
   };
 
@@ -159,81 +124,74 @@ export default function AddMedicineScreen({ navigation }) {
 
         {/* Header */}
         <View style={styles.pageHeader}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#00C9A7" />
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color="#00C9A7" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="pill" size={30} color="#00C9A7" />
-            </View>
-            <Text style={styles.pageTitle}>{t('addMedicine')}</Text>
-            <Text style={styles.pageSubtitle}>{t('setUpSchedule')}</Text>
+            <Text style={styles.pageTitle}>Add Medicine</Text>
+            <Text style={styles.pageSubtitle}>Set up your schedule</Text>
           </View>
         </View>
 
-        {/* Basic Info */}
+        {/* ── Medication Details ─────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('medicationDetails')}</Text>
+          <Text style={styles.sectionTitle}>Medication Details</Text>
 
-          <Text style={styles.label}>{t('medicineName')}</Text>
-          <View style={[styles.inputWrapper, nameFocused && styles.inputFocused]}>
-            <MaterialCommunityIcons name="pill" size={20} color={nameFocused ? '#00C9A7' : '#64748B'} style={styles.inputIcon} />
+          <Text style={styles.label}>Medicine Name</Text>
+          <View style={[styles.inputRow, nameFocused && styles.inputFocused]}>
+            <MaterialCommunityIcons name="pill" size={18} color={nameFocused ? '#00C9A7' : '#64748B'} style={{ marginRight: 10 }} />
             <TextInput
               style={styles.input}
-              placeholder={t('searchMedicineName')}
+              placeholder="Type to search…"
               placeholderTextColor="#475569"
               value={name}
-              onChangeText={(text) => {
-                setName(text);
-                if (drugInfo) clearInfo();
-              }}
+              onChangeText={(v) => { setName(v); if (drugInfo) setDrugInfo(null); }}
               onFocus={() => setNameFocused(true)}
               onBlur={() => setNameFocused(false)}
             />
-            {fetchingSuggestions && <ActivityIndicator color="#00C9A7" size="small" style={{ marginRight: 10 }} />}
+            {fetchingSugg && <ActivityIndicator color="#00C9A7" size="small" />}
           </View>
 
-          {/* Autocomplete Dropdown */}
+          {/* Autocomplete dropdown */}
           {nameFocused && suggestions.length > 0 && !drugInfo && (
-            <View style={styles.suggestionsCard}>
-              {suggestions.map((sg, i) => (
-                <TouchableOpacity key={i} style={styles.suggestionItem} onPress={() => handleSelectSuggestion(sg)}>
-                  <MaterialCommunityIcons name="magnify" size={16} color="#64748B" />
-                  <Text style={styles.suggestionText}>{sg}</Text>
+            <View style={styles.dropdown}>
+              {suggestions.map((s, i) => (
+                <TouchableOpacity key={i} style={styles.dropdownItem} onPress={() => handleSelectSuggestion(s)}>
+                  <MaterialCommunityIcons name="magnify" size={14} color="#64748B" />
+                  <Text style={styles.dropdownText}>{s}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          {/* Drug Info Panel */}
+          {/* Drug info panel */}
           {fetchingInfo && (
-            <View style={styles.infoLoadingWrapper}>
+            <View style={styles.infoLoading}>
               <ActivityIndicator color="#8B5CF6" size="small" />
-              <Text style={styles.infoLoadingText}>{t('fetchingInfo')}</Text>
+              <Text style={styles.infoLoadingText}>Fetching drug information…</Text>
             </View>
           )}
-
           {drugInfo && !fetchingInfo && (
             <View style={styles.infoPanel}>
               <View style={styles.infoPanelHeader}>
-                <MaterialCommunityIcons name="information-outline" size={18} color="#8B5CF6" />
-                <Text style={styles.infoPanelTitle}>{t('medicineInfo')}</Text>
+                <MaterialCommunityIcons name="information-outline" size={16} color="#8B5CF6" />
+                <Text style={styles.infoPanelTitle}>Drug Info (OpenFDA)</Text>
+                <TouchableOpacity onPress={() => setDrugInfo(null)} style={{ marginLeft: 'auto' }}>
+                  <MaterialCommunityIcons name="close" size={16} color="#64748B" />
+                </TouchableOpacity>
               </View>
-              {drugInfo.usage && (
-                <Text style={styles.infoBlock}><Text style={styles.infoLabel}>{t('usage')}: </Text>{drugInfo.usage}</Text>
-              )}
-              {drugInfo.warning && (
-                <Text style={styles.warningBlock}><Text style={styles.warningLabel}>{t('warnings')}: </Text>{drugInfo.warning}</Text>
-              )}
+              {drugInfo.usage   && <Text style={styles.infoText}><Text style={styles.infoLabel}>Use: </Text>{drugInfo.usage}</Text>}
+              {drugInfo.warning && <Text style={styles.warnText}><Text style={styles.warnLabel}>⚠ Warning: </Text>{drugInfo.warning}</Text>}
             </View>
           )}
 
-          <Text style={[styles.label, { marginTop: 16 }]}>{t('dosage')}</Text>
-          <View style={[styles.inputWrapper, dosageFocused && styles.inputFocused]}>
-            <MaterialCommunityIcons name="scale" size={20} color={dosageFocused ? '#00C9A7' : '#64748B'} style={styles.inputIcon} />
+          {/* Dosage / strength */}
+          <Text style={[styles.label, { marginTop: 14 }]}>Strength / Dosage</Text>
+          <View style={[styles.inputRow, dosageFocused && styles.inputFocused]}>
+            <MaterialCommunityIcons name="scale-balance" size={18} color={dosageFocused ? '#00C9A7' : '#64748B'} style={{ marginRight: 10 }} />
             <TextInput
               style={styles.input}
-              placeholder="e.g., 1 tablet, 500mg"
+              placeholder="e.g., 500mg, 10ml, 1 tablet"
               placeholderTextColor="#475569"
               value={dosage}
               onChangeText={setDosage}
@@ -241,116 +199,169 @@ export default function AddMedicineScreen({ navigation }) {
               onBlur={() => setDosageFocused(false)}
             />
           </View>
+          <Text style={styles.hint}>Describe the strength — used only for display in reminders.</Text>
         </View>
 
-        {/* Inventory Tracking (Optional) */}
+        {/* ── Inventory Tracking ─────────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>{t('inventoryOptional')}</Text>
-              <Text style={styles.sectionSubtitle}>{t('inventoryHint')}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionTitle}>Inventory Tracking</Text>
+              <Text style={styles.sectionSub}>Get low-stock refill reminders</Text>
             </View>
-            <TouchableOpacity onPress={() => setEnableInventory(!enableInventory)} style={styles.toggleBtn}>
-              <MaterialCommunityIcons name={enableInventory ? "toggle-switch" : "toggle-switch-off"} size={40} color={enableInventory ? "#00C9A7" : "#475569"} />
+            <TouchableOpacity onPress={() => setTrackInventory(!trackInventory)}>
+              <MaterialCommunityIcons
+                name={trackInventory ? 'toggle-switch' : 'toggle-switch-off'}
+                size={42}
+                color={trackInventory ? '#00C9A7' : '#475569'}
+              />
             </TouchableOpacity>
           </View>
 
-          {enableInventory && (
-            <View style={styles.inventoryArea}>
+          {trackInventory && (
+            <View style={{ marginTop: 16 }}>
+              {/* Type selector */}
+              <Text style={styles.label}>Type of Medicine</Text>
+              <View style={styles.typeRow}>
+                {DOSE_TYPES.map(dt => (
+                  <TouchableOpacity
+                    key={dt.key}
+                    style={[styles.typeBtn, doseType === dt.key && styles.typeBtnActive]}
+                    onPress={() => {
+                      setDoseType(dt.key);
+                      setStockAmt('');
+                      setDoseAmt(dt.defaultDose);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons
+                      name={dt.icon}
+                      size={22}
+                      color={doseType === dt.key ? '#0F172A' : '#94A3B8'}
+                    />
+                    <Text style={[styles.typeBtnText, doseType === dt.key && { color: '#0F172A' }]}>
+                      {dt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Stock + Per dose in one row */}
               <View style={styles.inventoryRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>{t('pillsInStock')}</Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput style={styles.input} placeholder="e.g., 60" placeholderTextColor="#475569" value={quantity} onChangeText={setQuantity} keyboardType="numeric" />
+                  <Text style={styles.label}>In stock now</Text>
+                  <View style={styles.inputRowSmall}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      placeholder={activeDoseType.defaultStock}
+                      placeholderTextColor="#475569"
+                      value={stockAmt}
+                      onChangeText={setStockAmt}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unitBadge}>{activeDoseType.unit}</Text>
                   </View>
                 </View>
-                <View style={{ width: 16 }} />
+
+                <View style={{ width: 12 }} />
+
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>{t('pillsPerDose')}</Text>
-                  <View style={styles.inputWrapper}>
-                    <TextInput style={styles.input} placeholder="e.g., 1" placeholderTextColor="#475569" value={pillsPerDose} onChangeText={setPillsPerDose} keyboardType="numeric" />
+                  <Text style={styles.label}>Per dose</Text>
+                  <View style={styles.inputRowSmall}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      placeholder={activeDoseType.defaultDose}
+                      placeholderTextColor="#475569"
+                      value={doseAmt}
+                      onChangeText={setDoseAmt}
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unitBadge}>{activeDoseType.doseUnit}</Text>
                   </View>
                 </View>
               </View>
-              <Text style={[styles.label, { marginTop: 16 }]}>{t('refillLeadTime')}</Text>
-              <View style={styles.inputWrapper}>
-                <MaterialCommunityIcons name="bell-ring-outline" size={20} color="#00C9A7" style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="e.g., 7" placeholderTextColor="#475569" value={leadTime} onChangeText={setLeadTime} keyboardType="numeric" />
-                <Text style={styles.inputSuffix}>Days</Text>
+
+              {/* Lead time */}
+              <Text style={[styles.label, { marginTop: 12 }]}>Remind me when this many days remain</Text>
+              <View style={styles.inputRow}>
+                <MaterialCommunityIcons name="bell-ring-outline" size={18} color="#00C9A7" style={{ marginRight: 10 }} />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="7"
+                  placeholderTextColor="#475569"
+                  value={leadTime}
+                  onChangeText={setLeadTime}
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unitBadge}>Days</Text>
               </View>
+
+              {/* Live days-left preview */}
+              {stockAmt && doseAmt && times.length > 0 && (
+                <View style={styles.supplyPreview}>
+                  <MaterialCommunityIcons name="calculator-variant-outline" size={14} color="#00C9A7" />
+                  <Text style={styles.supplyPreviewText}>
+                    ≈ {Math.floor(parseFloat(stockAmt) / (parseFloat(doseAmt) * times.length))} days of supply at {times.length}x/day
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
 
-        {/* Repeat Days */}
+        {/* ── Repeat Schedule ────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('repeatSchedule')}</Text>
+          <Text style={styles.sectionTitle}>Repeat Schedule</Text>
           <View style={styles.daysRow}>
-            {DAYS_OF_WEEK.map((day) => {
-              const selected = selectedDays.includes(day.value);
+            {DAYS_OF_WEEK.map(day => {
+              const sel = selectedDays.includes(day.value);
               return (
-                <TouchableOpacity
-                  key={day.value}
-                  style={[styles.dayPill, selected && styles.dayPillSelected]}
-                  onPress={() => toggleDay(day.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.dayText, selected && styles.dayTextSelected]}>{day.label}</Text>
+                <TouchableOpacity key={day.value} style={[styles.dayPill, sel && styles.dayPillSel]}
+                  onPress={() => setSelectedDays(prev => sel ? prev.filter(d => d !== day.value) : [...prev, day.value].sort())}>
+                  <Text style={[styles.dayText, sel && { color: '#0F172A' }]}>{day.label}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
         </View>
 
-        {/* Times */}
+        {/* ── Reminder Times ─────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('reminderTimes')}</Text>
-
-          {times.map((time, index) => (
-            <View key={index} style={styles.timeRow}>
+          <Text style={styles.sectionTitle}>Reminder Times</Text>
+          {times.map((time, i) => (
+            <View key={i} style={styles.timeRow}>
               <View style={styles.timeCard}>
-                <MaterialCommunityIcons name="clock-outline" size={20} color="#00C9A7" />
+                <MaterialCommunityIcons name="clock-outline" size={18} color="#00C9A7" />
                 <View style={{ flex: 1 }}>
-                    {Platform.OS === 'android' ? (
-                      <TouchableOpacity onPress={() => {
-                        const newShow = [...showPicker];
-                        newShow[index] = true;
-                        setShowPicker(newShow);
-                      }}>
-                        <Text style={styles.timeDisplay}>{formatTime(time)}</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                    {(showPicker[index] || Platform.OS === 'ios') && (
-                      <DateTimePicker
-                        value={time}
-                        mode="time"
-                        is24Hour={false}
-                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                        onChange={(event, selected) => handleTimeChange(event, selected, index)}
-                        themeVariant="dark"
-                      />
-                    )}
-                  </View>
+                  {Platform.OS === 'android' && (
+                    <TouchableOpacity onPress={() => { const n = [...showPicker]; n[i] = true; setShowPicker(n); }}>
+                      <Text style={styles.timeText}>{formatTime(time)}</Text>
+                    </TouchableOpacity>
+                  )}
+                  {(showPicker[i] || Platform.OS === 'ios') && (
+                    <DateTimePicker value={time} mode="time" is24Hour={false}
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'} themeVariant="dark"
+                      onChange={(e, s) => handleTimeChange(e, s, i)} />
+                  )}
+                </View>
               </View>
-
               {times.length > 1 && (
-                <TouchableOpacity onPress={() => removeTime(index)} style={styles.removeBtn}>
-                  <MaterialCommunityIcons name="close" size={18} color="#F87171" />
+                <TouchableOpacity style={styles.removeBtn} onPress={() => removeTime(i)}>
+                  <MaterialCommunityIcons name="close" size={16} color="#F87171" />
                 </TouchableOpacity>
               )}
             </View>
           ))}
-
-          <TouchableOpacity style={styles.addTimeBtn} onPress={addAnotherTime} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#00C9A7" />
-            <Text style={styles.addTimeText}>{t('addAnotherTime')}</Text>
+          <TouchableOpacity style={styles.addTimeBtn} onPress={addAnotherTime}>
+            <MaterialCommunityIcons name="plus-circle-outline" size={18} color="#00C9A7" />
+            <Text style={styles.addTimeText}>Add Another Time</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Save */}
+        {/* ── Save ──────────────────────────────────────────────────────────── */}
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
-          <MaterialCommunityIcons name="content-save-outline" size={22} color="#0F172A" />
-          <Text style={styles.saveBtnText}>{t('saveMedicine')}</Text>
+          <MaterialCommunityIcons name="content-save-outline" size={20} color="#0F172A" />
+          <Text style={styles.saveBtnText}>Save Medicine</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -360,51 +371,61 @@ export default function AddMedicineScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0F172A' },
-  container: { padding: 24, paddingTop: 60, paddingBottom: 48 },
-  pageHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 32 },
-  backBtn: { marginRight: 16, marginTop: 4, width: 40, height: 40, borderRadius: 20, backgroundColor: '#00C9A71A', alignItems: 'center', justifyContent: 'center' },
-  iconCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#00C9A71A', borderWidth: 1.5, borderColor: '#00C9A7', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  pageTitle: { fontSize: 32, fontWeight: '800', color: '#F1F5F9', letterSpacing: -0.5 },
-  pageSubtitle: { fontSize: 16, color: '#94A3B8', marginTop: 4 },
-  section: { backgroundColor: '#1E293B', borderRadius: 24, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: '#334155' },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#F1F5F9', marginBottom: 6 },
-  sectionSubtitle: { fontSize: 13, color: '#94A3B8' },
-  label: { fontSize: 14, fontWeight: '600', color: '#94A3B8', marginBottom: 8, marginLeft: 4 },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F172A', borderRadius: 16, borderWidth: 1.5, borderColor: '#334155', height: 60, paddingHorizontal: 16 },
-  inputFocused: { borderColor: '#00C9A7', backgroundColor: '#00C9A70A' },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, color: '#F1F5F9', fontSize: 16, fontWeight: '500' },
-  inputSuffix: { color: '#64748B', fontSize: 14, fontWeight: '600' },
-  
-  suggestionsCard: { backgroundColor: '#0F172A', borderRadius: 12, borderWidth: 1, borderColor: '#334155', marginTop: 8, padding: 8, zIndex: 10 },
-  suggestionItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  suggestionText: { color: '#E2E8F0', fontSize: 15, marginLeft: 10 },
-  
-  infoLoadingWrapper: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingLeft: 8 },
-  infoLoadingText: { color: '#8B5CF6', fontSize: 13, fontWeight: '600' },
-  infoPanel: { backgroundColor: '#8B5CF615', borderRadius: 12, padding: 16, marginTop: 12, borderWidth: 1, borderColor: '#8B5CF630' },
-  infoPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  infoPanelTitle: { color: '#8B5CF6', fontSize: 14, fontWeight: '700' },
-  infoBlock: { color: '#E2E8F0', fontSize: 13, lineHeight: 20, marginBottom: 8 },
-  infoLabel: { fontWeight: '700', color: '#A78BFA' },
-  warningBlock: { color: '#F87171', fontSize: 13, lineHeight: 20 },
-  warningLabel: { fontWeight: '700', color: '#FCA5A5' },
+  container: { padding: 24, paddingTop: 60, paddingBottom: 56 },
 
-  inventoryArea: { marginTop: 12, borderTopWidth: 1, borderTopColor: '#334155', paddingTop: 16 },
-  inventoryRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  
+  pageHeader: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 28 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#00C9A71A', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#00C9A7' },
+  pageTitle: { fontSize: 28, fontWeight: '800', color: '#F1F5F9' },
+  pageSubtitle: { fontSize: 14, color: '#94A3B8', marginTop: 2 },
+
+  section: { backgroundColor: '#1E293B', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#334155' },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#F1F5F9', marginBottom: 4 },
+  sectionSub: { fontSize: 13, color: '#64748B' },
+  label: { fontSize: 13, fontWeight: '600', color: '#94A3B8', marginBottom: 8, marginTop: 4 },
+  hint: { fontSize: 12, color: '#475569', marginTop: 6, marginLeft: 4 },
+
+  inputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F172A', borderRadius: 14, borderWidth: 1.5, borderColor: '#334155', height: 54, paddingHorizontal: 14 },
+  inputRowSmall: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F172A', borderRadius: 14, borderWidth: 1.5, borderColor: '#334155', height: 50, paddingHorizontal: 14 },
+  inputFocused: { borderColor: '#00C9A7' },
+  input: { flex: 1, color: '#F1F5F9', fontSize: 15, fontWeight: '500' },
+  unitBadge: { color: '#94A3B8', fontSize: 13, fontWeight: '700', backgroundColor: '#0F172A', paddingLeft: 6 },
+
+  dropdown: { backgroundColor: '#0F172A', borderRadius: 12, borderWidth: 1, borderColor: '#334155', marginTop: 6, overflow: 'hidden' },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  dropdownText: { color: '#E2E8F0', fontSize: 14, flex: 1 },
+
+  infoLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingLeft: 4 },
+  infoLoadingText: { color: '#8B5CF6', fontSize: 13 },
+  infoPanel: { backgroundColor: '#8B5CF615', borderRadius: 12, padding: 14, marginTop: 10, borderWidth: 1, borderColor: '#8B5CF630' },
+  infoPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  infoPanelTitle: { color: '#8B5CF6', fontSize: 13, fontWeight: '700' },
+  infoText: { color: '#CBD5E1', fontSize: 13, lineHeight: 19, marginBottom: 6 },
+  infoLabel: { fontWeight: '700', color: '#A78BFA' },
+  warnText: { color: '#FCA5A5', fontSize: 12, lineHeight: 18 },
+  warnLabel: { fontWeight: '700', color: '#F87171' },
+
+  typeRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+  typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0F172A', borderRadius: 14, borderWidth: 1.5, borderColor: '#334155', paddingVertical: 14 },
+  typeBtnActive: { backgroundColor: '#00C9A7', borderColor: '#00C9A7' },
+  typeBtnText: { fontSize: 13, fontWeight: '700', color: '#94A3B8' },
+
+  inventoryRow: { flexDirection: 'row' },
+  supplyPreview: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingLeft: 4 },
+  supplyPreviewText: { color: '#00C9A7', fontSize: 12, fontWeight: '600' },
+
   daysRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  dayPill: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#334155' },
-  dayPillSelected: { backgroundColor: '#00C9A7', borderColor: '#00C9A7' },
-  dayText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
-  dayTextSelected: { color: '#0F172A' },
-  timeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  timeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F172A', borderRadius: 16, height: 60, paddingHorizontal: 16, borderWidth: 1, borderColor: '#334155', gap: 12 },
-  timeDisplay: { fontSize: 18, color: '#F1F5F9', fontWeight: '600' },
-  removeBtn: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
-  addTimeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 16, backgroundColor: '#00C9A71A', borderRadius: 16, borderWidth: 1.5, borderColor: '#00C9A7' },
-  addTimeText: { color: '#00C9A7', fontSize: 16, fontWeight: '700' },
-  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00C9A7', paddingVertical: 20, borderRadius: 20, gap: 8, shadowColor: '#00C9A7', shadowOpacity: 0.4, shadowRadius: 18, elevation: 8, shadowOffset: { width: 0, height: 6 } },
-  saveBtnText: { color: '#0F172A', fontSize: 18, fontWeight: '800' },
+  dayPill: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#334155' },
+  dayPillSel: { backgroundColor: '#00C9A7', borderColor: '#00C9A7' },
+  dayText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
+
+  timeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  timeCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#0F172A', borderRadius: 14, height: 54, paddingHorizontal: 14, borderWidth: 1, borderColor: '#334155' },
+  timeText: { fontSize: 17, color: '#F1F5F9', fontWeight: '600' },
+  removeBtn: { width: 50, height: 50, alignItems: 'center', justifyContent: 'center' },
+  addTimeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, backgroundColor: '#00C9A71A', borderRadius: 14, borderWidth: 1.5, borderColor: '#00C9A7' },
+  addTimeText: { color: '#00C9A7', fontSize: 15, fontWeight: '700' },
+
+  saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00C9A7', paddingVertical: 18, borderRadius: 18, gap: 8, shadowColor: '#00C9A7', shadowOpacity: 0.5, shadowRadius: 18, elevation: 8 },
+  saveBtnText: { color: '#0F172A', fontSize: 17, fontWeight: '800' },
 });
