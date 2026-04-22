@@ -43,8 +43,7 @@
           "androidMode": "default",
           "androidCollapsedTitle": "Medicine Reminder"
         }
-      ],
-      "expo-speech-recognition"
+      ]
     ],
     "extra": {
       "eas": {
