@@ -75,6 +75,8 @@ export async function scheduleMedicineNotification(medicine) {
               medicineId: medicine.id,
               medicineName: medicine.name,
               dosage: medicine.dosage,
+              // #2 — include doseAmount so App.js doesn't need an extra Firestore read
+              doseAmount: medicine.doseAmount ?? 1,
               scheduledTime: timeISO,
             },
           },

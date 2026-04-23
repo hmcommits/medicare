@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Dimensions, ScrollView, Platform, Alert
@@ -37,15 +37,10 @@ export default function Dashboard({ route, navigation }) {
 
   // Gamification states
   const [streakData, setStreakData] = useState({ streak: 0, freezeUsed: false, milestoneReached: null });
+  const [streakLoading, setStreakLoading] = useState(true); // #5 — loading skeleton
   const [unlockedBadges, setUnlockedBadges] = useState([]);
   const [freezeContext, setFreezeContext] = useState({ count: 1, resetMonth: '' });
   const confettiRef = useRef(null);
-
-  // Fetch gamification base data
-  const loadGamificationContext = async () => {
-    const freezeInfo = await getStreakFreeze();
-    setFreezeContext(freezeInfo);
-  };
 
   // Real-time Firestore listeners
   useFocusEffect(
@@ -58,8 +53,14 @@ export default function Dashboard({ route, navigation }) {
         try {
           const pUid = await getActivePatientUid();
           if (!isActive) return;
-          
-          await loadGamificationContext();
+
+          // #11 — guard: redirect guardian with no linked patient
+          // getActivePatientUid() already throws if not linked — caught below
+
+          // #18 — load freeze info once at setup, not on every log callback
+          const freezeInfo = await getStreakFreeze();
+          if (isActive) setFreezeContext(freezeInfo);
+          setStreakLoading(false);
 
           unsubMeds = subscribeMedicines(pUid, (fetchedMeds) => {
             if (isActive) setMedicines(fetchedMeds);
@@ -69,37 +70,24 @@ export default function Dashboard({ route, navigation }) {
             if (!isActive) return;
             setLogs(fetchedLogs);
             setWeeklyAdherence(getWeeklyAdherenceData(fetchedLogs));
-            
-            // Recalculate gamification on new logs for display (both roles)
-            const freezeInfo = await getStreakFreeze();
+
+            // #8 — use cached freezeContext, don't await getStreakFreeze() here
             const { streak, freezeUsed, milestoneReached } = computeStreak(fetchedLogs, freezeInfo.count > 0);
-            
             setStreakData({ streak, freezeUsed, milestoneReached });
-            
-            // Badges
+
             const bdgIds = computeBadges(fetchedLogs, streak);
             setUnlockedBadges(bdgIds);
-            
-            // Only the patient should trigger database mutations and notifications
-            if (role === 'patient') {
-              if (freezeUsed && freezeInfo.count > 0) {
-                await consumeStreakFreeze();
-              }
 
-              if (bdgIds.length > 0) {
-                bdgIds.forEach(id => saveAchievement(id));
-              }
-              
-              // Notify guardians if milestone hit today
+            if (role === 'patient') {
+              if (freezeUsed && freezeInfo.count > 0) await consumeStreakFreeze();
+              if (bdgIds.length > 0) bdgIds.forEach(id => saveAchievement(id));
+
               if (milestoneReached) {
                 const today = new Date().toDateString();
                 const cacheKey = `@milestone_${milestoneReached}_${today}`;
                 const alreadySent = await AsyncStorage.getItem(cacheKey);
-                
                 if (!alreadySent) {
-                  // Trigger local confetti celebration
                   if (confettiRef.current) confettiRef.current.start();
-
                   const tokens = await getGuardianPushTokens();
                   if (tokens.length > 0) {
                     await notifyGuardiansOfMilestone(tokens, milestoneReached, t);
@@ -111,6 +99,11 @@ export default function Dashboard({ route, navigation }) {
           });
         } catch (error) {
           console.error('[Dashboard] Setup error:', error);
+          setStreakLoading(false);
+          // #11 — guardian not linked: redirect to linking screen
+          if (error.message?.includes('not linked') && role === 'guardian') {
+            navigation.reset({ index: 0, routes: [{ name: 'GuardianLink' }] });
+          }
         }
       };
 
@@ -165,24 +158,41 @@ export default function Dashboard({ route, navigation }) {
     );
   };
   
-  const handleRefill = async (item) => {
-    Alert.alert(
-      t('refillConfirmTitle'),
-      t('refillConfirmBody', item.name),
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: 'Refill 30 💊',
-          onPress: async () => {
-            try {
-              await refillMedicine(item.id, 30);
-            } catch (e) {
-              Alert.alert('Error', e.message);
-            }
-          }
-        }
-      ]
-    );
+  const handleRefill = (item) => {
+    Alert.prompt
+      ? Alert.prompt(
+          t('refillConfirmTitle'),
+          `Enter quantity to add for ${item.name}:`,
+          [
+            { text: t('cancel'), style: 'cancel' },
+            {
+              text: 'Refill',
+              onPress: async (qty) => {
+                const num = parseInt(qty, 10);
+                if (!num || num <= 0) return Alert.alert('Invalid', 'Enter a positive number.');
+                try { await refillMedicine(item.id, num); }
+                catch (e) { Alert.alert('Error', e.message); }
+              },
+            },
+          ],
+          'plain-text',
+          '30'
+        )
+      : // Android fallback: fixed-quantity dialog
+        Alert.alert(
+          t('refillConfirmTitle'),
+          `Add 30 units to ${item.name}?`,
+          [
+            { text: t('cancel'), style: 'cancel' },
+            {
+              text: 'Refill +30',
+              onPress: async () => {
+                try { await refillMedicine(item.id, 30); }
+                catch (e) { Alert.alert('Error', e.message); }
+              },
+            },
+          ]
+        );
   };
 
   const handleVoiceAssistant = async () => {
@@ -198,14 +208,24 @@ export default function Dashboard({ route, navigation }) {
   const tookToday = todayLogs.filter(l => l.status === 'Took').length;
   const adherenceToday = todayLogs.length > 0 ? Math.round((tookToday / todayLogs.length) * 100) : 0;
 
-  // ── Medicine card renderer
-  const renderMedicineCard = (item) => {
-    const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  // #14 — only show medicines scheduled for today's day-of-week
+  const todayDayOfWeek = new Date().getDay();
+  const todaysMedicines = useMemo(
+    () => medicines.filter(med => !med.days || med.days.includes(todayDayOfWeek)),
+    [medicines, todayDayOfWeek]
+  );
+
+  // #8 — memoize streak + badges (only recompute when logs array changes)
+  const memoizedStreakData = useMemo(() => streakData, [streakData]);
+  const memoizedBadges = useMemo(() => unlockedBadges, [unlockedBadges]);
+  // #16 — MedicineCard as React.memo so only changed items re-render
+  const MedicineCard = React.memo(({ item }) => {
+    // #6 — isDone persists all day (not just 1-hour window)
+    const cardTodayStr = new Date().toDateString();
     const isDone = logs.some(log =>
       log.medicineId === item.id &&
       log.status === 'Took' &&
-      new Date(log.timestamp) > oneHourAgo
+      new Date(log.timestamp).toDateString() === cardTodayStr
     );
 
     let formattedTimes = 'Not set';
@@ -223,13 +243,13 @@ export default function Dashboard({ route, navigation }) {
     }
 
     const canDelete = role === 'patient' || (role === 'guardian' && isEditMode);
-    
-    // Inventory refill logic
+
+    // #2 — inventory uses doseAmount (real Firestore field name)
     let needsRefill = false;
     let daysLeft = 999;
-    if (item.quantity !== undefined && item.pillsPerDose) {
+    if (item.quantity !== undefined && item.doseAmount) {
       const timesPerDay = item.times?.length || 1;
-      const pd = parseInt(item.pillsPerDose, 10);
+      const pd = parseInt(item.doseAmount, 10);
       const q = parseInt(item.quantity, 10);
       daysLeft = Math.floor(q / (pd * timesPerDay));
       needsRefill = daysLeft <= (parseInt(item.leadTimeDays, 10) || 7);
@@ -253,8 +273,6 @@ export default function Dashboard({ route, navigation }) {
                 <MaterialCommunityIcons name="calendar-week" size={13} color="#64748B" />
                 <Text style={styles.medMetaText}>{formattedDays}</Text>
               </View>
-              
-              {/* Inventory Alert Chip */}
               {needsRefill && !isDone && (
                 <View style={styles.refillAlert}>
                   <MaterialCommunityIcons name="alert-circle-outline" size={12} color="#F87171" />
@@ -271,14 +289,12 @@ export default function Dashboard({ route, navigation }) {
                 <Text style={styles.doneText}>Done</Text>
               </View>
             )}
-            
             {!isDone && needsRefill && (
               <TouchableOpacity style={styles.refillBtn} onPress={() => handleRefill(item)}>
                 <MaterialCommunityIcons name="pill" size={14} color="#0F172A" />
                 <Text style={styles.refillBtnText}>Refill</Text>
               </TouchableOpacity>
             )}
-
             {canDelete && (
               <TouchableOpacity
                 style={styles.deleteBtn}
@@ -292,7 +308,7 @@ export default function Dashboard({ route, navigation }) {
         </View>
       </View>
     );
-  };
+  });
 
   const getLineChartData = () => {
     const last7Days = [...Array(7)].map((_, i) => {
@@ -367,11 +383,12 @@ export default function Dashboard({ route, navigation }) {
         </View>
 
         {/* Gamification Banner - Visible to both patient and guardian */}
-        <StreakBanner 
-          streak={streakData.streak} 
-          freezeUsed={streakData.freezeUsed} 
-          badges={unlockedBadges.map(id => BADGE_CONFIG[id])} 
-          milestoneReached={streakData.milestoneReached}
+        <StreakBanner
+          streak={memoizedStreakData.streak}
+          loading={streakLoading}
+          freezeUsed={memoizedStreakData.freezeUsed}
+          badges={memoizedBadges.map(id => BADGE_CONFIG[id])}
+          milestoneReached={memoizedStreakData.milestoneReached}
         />
 
         {/* Adherence Chart */}
@@ -414,8 +431,14 @@ export default function Dashboard({ route, navigation }) {
               <Text style={styles.emptyStateTitle}>All clear!</Text>
               <Text style={styles.emptyStateSubtitle}>No medicines scheduled yet.{'\n'}Add your first one below.</Text>
             </View>
+          ) : todaysMedicines.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons name="calendar-check-outline" size={52} color="#334155" />
+              <Text style={styles.emptyStateTitle}>Nothing today!</Text>
+              <Text style={styles.emptyStateSubtitle}>No medicines are scheduled for today.{'\n'}Enjoy your day! 🎉</Text>
+            </View>
           ) : (
-            medicines.map(item => renderMedicineCard(item))
+            todaysMedicines.map(item => <MedicineCard key={item.id} item={item} />)
           )}
         </View>
 

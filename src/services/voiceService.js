@@ -1,16 +1,13 @@
 /**
- * Voice service — wraps expo-speech (TTS) and provides the command parser.
- * STT lifecycle (start/stop listening) is handled in individual components
- * using expo-speech-recognition hooks (useSpeechRecognitionEvent).
+ * Voice service — wraps expo-speech (TTS) for reading medicines aloud.
+ * Note: Voice recognition (STT) and command detection features have been fully removed.
  *
  * This service handles:
  *  1. Text-to-speech (reading medicines aloud)
- *  2. Command detection from transcribed text (keyword matching)
- *  3. Fuzzy medicine name matching (Levenshtein distance via fastest-levenshtein)
  */
 
 import * as Speech from 'expo-speech';
-import { LOCALE_MAP } from '../constants/voiceKeywords';
+import { LOCALE_MAP } from '../constants/localeMap';
 
 // ─── TTS ─────────────────────────────────────────────────────────────────────
 

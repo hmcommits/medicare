@@ -10,12 +10,14 @@ export default function RegisterScreen({ route, navigation }) {
   const role = route.params?.role || 'patient';
   const isPatient = role === 'patient';
 
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmFocused, setConfirmFocused] = useState(false);
@@ -24,8 +26,12 @@ export default function RegisterScreen({ route, navigation }) {
   const bgAccent = isPatient ? '#00C9A71A' : '#818CF81A';
 
   const handleRegister = async () => {
-    if (!email || !password || !confirmPassword) {
+    if (!name || !email || !password || !confirmPassword) {
       return Alert.alert('Error', 'Please fill in all fields');
+    }
+    // #22 — Basic email format validation
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return Alert.alert('Error', 'Please enter a valid email address');
     }
     if (password !== confirmPassword) {
       return Alert.alert('Error', 'Passwords do not match');
@@ -35,7 +41,7 @@ export default function RegisterScreen({ route, navigation }) {
     }
     setLoading(true);
     try {
-      await registerUser(email, password, role);
+      await registerUser(email, password, role, name);
       navigation.navigate(isPatient ? 'PatientLink' : 'GuardianLink');
     } catch (e) {
       Alert.alert('Registration Failed', e.message);
@@ -64,6 +70,22 @@ export default function RegisterScreen({ route, navigation }) {
 
         {/* Form Card */}
         <View style={styles.card}>
+
+          {/* Name */}
+          <Text style={styles.label}>Full Name</Text>
+          <View style={[styles.inputWrapper, nameFocused && { borderColor: accentColor }]}>
+            <MaterialCommunityIcons name="account-outline" size={20} color={nameFocused ? accentColor : '#64748B'} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Your Name"
+              placeholderTextColor="#64748B"
+              autoCapitalize="words"
+              value={name}
+              onChangeText={setName}
+              onFocus={() => setNameFocused(true)}
+              onBlur={() => setNameFocused(false)}
+            />
+          </View>
 
           {/* Email */}
           <Text style={styles.label}>Email Address</Text>

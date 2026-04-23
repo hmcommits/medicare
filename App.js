@@ -1,8 +1,9 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
 import ReminderModal from './src/components/ReminderModal';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import Constants from 'expo-constants';
 import {
   requestNotificationPermissions,
@@ -18,6 +19,7 @@ import {
 } from './src/services/storageService';
 import { LanguageProvider } from './src/contexts/LanguageContext';
 import Toast from 'react-native-toast-message';
+import { useForegroundReminders } from './src/hooks/useForegroundReminders';
 
 // Lazy-load expo-notifications — same pattern as notificationService.js.
 // Static imports are always evaluated; require() respects the runtime guard.
@@ -98,6 +100,14 @@ export default function App() {
     };
   }, []);
 
+  // #7 — stable reference so useForegroundReminders doesn't reset interval every render
+  const onReminderTrigger = useCallback((medData) => {
+    setCurrentMedicine(medData);
+    setReminderVisible(true);
+  }, []);
+
+  // Hook handles Expo Go foreground polling (no-op in real builds where Notifications handles it)
+  useForegroundReminders(onReminderTrigger);
 
   const handleReminderResponse = async (status) => {
     setReminderVisible(false);
@@ -108,16 +118,16 @@ export default function App() {
 
     try {
       const result = await logAdherence(med.id, status, med.scheduledTime);
-      
+
       if (status === 'Took') {
-        await decrementInventory(med.id, med.pillsPerDose || 1);
+        // #2 — use doseAmount (the real Firestore field) instead of pillsPerDose
+        await decrementInventory(med.id, med.doseAmount || 1);
       }
 
       if (status === 'Snoozed') {
         await scheduleSnoozedReminder(med);
         Toast.show({ type: 'info', text1: 'Snoozed for 5 minutes' });
       } else if (result && result.docId && !result.isDuplicate) {
-        // Show Undo toast for 5 seconds
         Toast.show({
           type: 'success',
           text1: `Marked as ${status}`,
@@ -127,10 +137,10 @@ export default function App() {
             Toast.hide();
             await deleteAdherenceLog(result.docId);
             if (status === 'Took') {
-              await incrementInventory(med.id, med.pillsPerDose || 1);
+              await incrementInventory(med.id, med.doseAmount || 1);
             }
             Toast.show({ type: 'info', text1: 'Action Undone' });
-          }
+          },
         });
       }
     } catch (error) {
@@ -140,16 +150,18 @@ export default function App() {
   };
 
   return (
-    <LanguageProvider>
-      <NavigationContainer ref={navigationRef}>
-        <AppNavigator />
-      </NavigationContainer>
-      <ReminderModal
-        visible={reminderVisible}
-        medicine={currentMedicine}
-        onResponse={handleReminderResponse}
-      />
-      <Toast />
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <NavigationContainer ref={navigationRef}>
+          <AppNavigator />
+        </NavigationContainer>
+        <ReminderModal
+          visible={reminderVisible}
+          medicine={currentMedicine}
+          onResponse={handleReminderResponse}
+        />
+        <Toast />
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }

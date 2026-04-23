@@ -36,33 +36,37 @@ export default function ProfileScreen({ navigation }) {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
         const userData = userSnap.exists() ? userSnap.data() : {};
         setProfile({
+          name:          userData.name || '',
           email:         user.email,
           role:          userData.role ?? 'patient',
           code:          userData.code ?? null,
           guardianUids:  userData.guardianUids ?? [],
         });
 
-        // Subscribe to logs + meds for live stats
-        if (userData.role === 'patient') {
-          const pUid = user.uid;
+        // #9 — Fetch stats using the active patient UID, so guardians can see the patient's stats too
+        try {
+          const pUid = await getActivePatientUid();
+          if (pUid) {
+            unsubMeds = subscribeMedicines(pUid, (meds) => {
+              setStats(prev => ({ ...prev, totalMeds: meds.length }));
+            });
 
-          unsubMeds = subscribeMedicines(pUid, (meds) => {
-            setStats(prev => ({ ...prev, totalMeds: meds.length }));
-          });
-
-          unsubLogs = subscribeLogs(pUid, (logs) => {
-            const tookCount   = logs.filter(l => l.status === 'Took').length;
-            const missedCount = logs.filter(l => l.status === 'Missed').length;
-            const { streak }  = computeStreak(logs, false);
-            const badgeIds    = computeBadges(logs, streak);
-            setStats(prev => ({
-              ...prev,
-              streak,
-              totalTook:   tookCount,
-              totalMissed: missedCount,
-              badges:      badgeIds,
-            }));
-          });
+            unsubLogs = subscribeLogs(pUid, (logs) => {
+              const tookCount   = logs.filter(l => l.status === 'Took').length;
+              const missedCount = logs.filter(l => l.status === 'Missed').length;
+              const { streak }  = computeStreak(logs, false);
+              const badgeIds    = computeBadges(logs, streak);
+              setStats(prev => ({
+                ...prev,
+                streak,
+                totalTook:   tookCount,
+                totalMissed: missedCount,
+                badges:      badgeIds,
+              }));
+            });
+          }
+        } catch (e) {
+          // Guardian not linked to a patient yet, that's okay, leave stats at 0
         }
       } catch (e) {
         console.error('[Profile] Load error:', e.message);
@@ -120,7 +124,8 @@ export default function ProfileScreen({ navigation }) {
     );
   }
 
-  const initials = (profile?.email ?? '?').slice(0, 2).toUpperCase();
+  const displayName = profile?.name || profile?.email || '?';
+  const initials = displayName.slice(0, 2).toUpperCase();
   const adherencePct = (stats.totalTook + stats.totalMissed) > 0
     ? Math.round((stats.totalTook / (stats.totalTook + stats.totalMissed)) * 100)
     : 0;
@@ -144,7 +149,8 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.avatarText}>{initials}</Text>
           </LinearGradient>
 
-          <Text style={styles.emailText}>{profile?.email}</Text>
+          <Text style={[styles.emailText, { fontSize: 20, marginBottom: 4 }]}>{profile?.name || 'No Name Set'}</Text>
+          <Text style={[styles.emailText, { color: '#94A3B8', fontSize: 14 }]}>{profile?.email}</Text>
           <View style={[styles.roleBadge, profile?.role === 'guardian' && styles.roleBadgeGuardian]}>
             <MaterialCommunityIcons name={profile?.role === 'guardian' ? 'shield-account' : 'account-heart'} size={14} color="#0F172A" />
             <Text style={styles.roleText}>{profile?.role === 'guardian' ? 'Guardian' : 'Patient'}</Text>
@@ -175,45 +181,43 @@ export default function ProfileScreen({ navigation }) {
         )}
 
         {/* ── Stats ── */}
-        {profile?.role === 'patient' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="chart-bar" size={18} color="#8B5CF6" />
-              <Text style={styles.sectionTitle}>Your Health Stats</Text>
-            </View>
-
-            <View style={styles.statsGrid}>
-              <View style={styles.statCell}>
-                <Text style={styles.statNum}>🔥 {stats.streak}</Text>
-                <Text style={styles.statLabel}>Day Streak</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statNum}>{adherencePct}%</Text>
-                <Text style={styles.statLabel}>Adherence</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statNum}>{stats.totalTook}</Text>
-                <Text style={styles.statLabel}>Doses Taken</Text>
-              </View>
-              <View style={styles.statCell}>
-                <Text style={styles.statNum}>{stats.totalMeds}</Text>
-                <Text style={styles.statLabel}>Medicines</Text>
-              </View>
-            </View>
-
-            {nextGoal && (
-              <View style={styles.nextGoalRow}>
-                <MaterialCommunityIcons name="flag-checkered" size={14} color="#F97316" />
-                <Text style={styles.nextGoalText}>
-                  {nextGoal - stats.streak} more days to your next badge ({nextGoal}-day streak)
-                </Text>
-              </View>
-            )}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <MaterialCommunityIcons name="chart-bar" size={18} color="#8B5CF6" />
+            <Text style={styles.sectionTitle}>Your Health Stats</Text>
           </View>
-        )}
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statCell}>
+              <Text style={styles.statNum}>🔥 {stats.streak}</Text>
+              <Text style={styles.statLabel}>Day Streak</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statNum}>{adherencePct}%</Text>
+              <Text style={styles.statLabel}>Adherence</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statNum}>{stats.totalTook}</Text>
+              <Text style={styles.statLabel}>Doses Taken</Text>
+            </View>
+            <View style={styles.statCell}>
+              <Text style={styles.statNum}>{stats.totalMeds}</Text>
+              <Text style={styles.statLabel}>Medicines</Text>
+            </View>
+          </View>
+
+          {nextGoal && (
+            <View style={styles.nextGoalRow}>
+              <MaterialCommunityIcons name="flag-checkered" size={14} color="#F97316" />
+              <Text style={styles.nextGoalText}>
+                {nextGoal - stats.streak} more days to next badge ({nextGoal}-day streak)
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* ── Badges ── */}
-        {profile?.role === 'patient' && stats.badges.length > 0 && (
+        {stats.badges.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="trophy" size={18} color="#F97316" />

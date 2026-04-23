@@ -4,7 +4,7 @@ import {
   Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { loginUser } from '../services/storageService';
+import { loginUser, resetPassword } from '../services/storageService';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -16,6 +16,9 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (!email || !password) return Alert.alert('Error', 'Please enter your email and password');
+    // #22 — Basic email validation
+    if (!/^\S+@\S+\.\S+$/.test(email)) return Alert.alert('Error', 'Please enter a valid email address');
+    
     setLoading(true);
     try {
       const role = await loginUser(email, password);
@@ -28,6 +31,21 @@ export default function LoginScreen({ navigation }) {
 
   const handleNavigateRegister = (role) => {
     navigation.navigate('Register', { role });
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      return Alert.alert('Forgot Password', 'Please enter your email address in the field above first.');
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return Alert.alert('Error', 'Please enter a valid email address');
+    }
+    try {
+      await resetPassword(email);
+      Alert.alert('Success', 'Password reset email sent! Please check your inbox.');
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
   };
 
   return (
@@ -81,6 +99,11 @@ export default function LoginScreen({ navigation }) {
               <MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color="#64748B" />
             </TouchableOpacity>
           </View>
+
+          {/* Forgot Password */}
+          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           {loading ? (
             <ActivityIndicator size="large" color="#00C9A7" style={{ marginVertical: 20 }} />
@@ -209,6 +232,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 6,
     gap: 8,
+  },
+  forgotBtn: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+    marginTop: -4,
+  },
+  forgotText: {
+    color: '#00C9A7',
+    fontSize: 13,
+    fontWeight: '600',
   },
   loginBtnText: {
     color: '#0F172A',

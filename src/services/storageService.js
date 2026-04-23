@@ -5,10 +5,10 @@ import {
   deleteDoc, query, where, orderBy, onSnapshot,
   updateDoc, increment
 } from 'firebase/firestore';
-import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  signOut
+  signOut,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -17,22 +17,40 @@ export const loginUser = async (email, password) => {
   const creds = await signInWithEmailAndPassword(auth, email, password);
 
   const userDoc = await getDoc(doc(db, 'users', creds.user.uid));
-  if (userDoc.exists()) {
-    const role = userDoc.data().role;
-    await AsyncStorage.setItem('@medicare_user_role', role);
-    if (role === 'patient') {
-      await AsyncStorage.setItem('@medicare_patient_uid', creds.user.uid);
-    }
-    return role;
+  if (!userDoc.exists()) {
+    // #10 — never silently default; surface the broken profile explicitly
+    throw new Error('User profile not found. Please contact support or re-register.');
   }
-  return 'patient';
+
+  const data = userDoc.data();
+  const role = data.role;
+  await AsyncStorage.setItem('@medicare_user_role', role);
+
+  if (role === 'patient') {
+    await AsyncStorage.setItem('@medicare_patient_uid', creds.user.uid);
+  } else if (role === 'guardian') {
+    // #3 — restore linked patient UIDs on re-login so getActivePatientUid() works
+    const linkedPatients = data.linkedPatientUids || [];
+    if (linkedPatients.length > 0) {
+      // Restore the first linked patient as the active one (user can switch later)
+      await AsyncStorage.setItem('@medicare_linked_patient_uid', linkedPatients[0]);
+      await AsyncStorage.setItem('@medicare_linked_patient_uids', JSON.stringify(linkedPatients));
+    }
+  }
+  return role;
 };
 
-export const registerUser = async (email, password, role) => {
+export const registerUser = async (email, password, role, name = '') => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   const uid = userCredential.user.uid;
 
-  await setDoc(doc(db, 'users', uid), { email, role });
+  // Store name for both roles; guardians start with empty linkedPatientUids array (many-to-many)
+  await setDoc(doc(db, 'users', uid), {
+    email,
+    role,
+    name: name.trim(),
+    ...(role === 'guardian' ? { linkedPatientUids: [] } : {}),
+  });
   await AsyncStorage.setItem('@medicare_user_role', role);
 
   if (role === 'patient') {
@@ -48,8 +66,9 @@ export const registerUser = async (email, password, role) => {
       }
     }
 
+    // guardianUids is the many-to-many list on the patient side
     await setDoc(doc(db, 'patientCodes', code), { patientUid: uid });
-    await setDoc(doc(db, 'users', uid), { code }, { merge: true });
+    await setDoc(doc(db, 'users', uid), { code, guardianUids: [] }, { merge: true });
     await AsyncStorage.setItem('@medicare_patient_uid', uid);
   }
 
@@ -62,7 +81,13 @@ export const logoutUser = async () => {
     '@medicare_user_role',
     '@medicare_patient_uid',
     '@medicare_linked_patient_uid',
+    '@medicare_linked_patient_uids',
   ]);
+};
+
+export const resetPassword = async (email) => {
+  if (!email) throw new Error('Please enter your email address first.');
+  await sendPasswordResetEmail(auth, email);
 };
 
 // ─── Patient ID resolution ────────────────────────────────────────────────────
@@ -96,27 +121,51 @@ export const getPatientCodeForCurrentUser = async () => {
 
 export const linkGuardianToPatient = async (code) => {
   const docSnap = await getDoc(doc(db, 'patientCodes', code));
-  if (docSnap.exists()) {
-    const pUid = docSnap.data().patientUid;
+  if (!docSnap.exists()) return false;
 
-    // Store locally for role resolution
-    await AsyncStorage.setItem('@medicare_linked_patient_uid', pUid);
+  const pUid = docSnap.data().patientUid;
 
-    // Write guardian UID into the patient's Firestore profile.
-    // Firestore Security Rules use this array to grant guardians read-only
-    // access to the patient's medicines and adherence logs.
-    if (auth.currentUser) {
-      const patientUserDoc = await getDoc(doc(db, 'users', pUid));
-      const existingGuardians = patientUserDoc.exists()
-        ? (patientUserDoc.data().guardianUids || [])
-        : [];
-      const updatedGuardians = [...new Set([...existingGuardians, auth.currentUser.uid])];
-      await setDoc(doc(db, 'users', pUid), { guardianUids: updatedGuardians }, { merge: true });
-    }
+  if (!auth.currentUser) return false;
+  const gUid = auth.currentUser.uid;
 
-    return true;
-  }
-  return false;
+  // ── Many-to-many: update patient side ────────────────────────────────────
+  const patientDoc = await getDoc(doc(db, 'users', pUid));
+  const existingGuardians = patientDoc.exists() ? (patientDoc.data().guardianUids || []) : [];
+  const updatedGuardians = [...new Set([...existingGuardians, gUid])];
+  await setDoc(doc(db, 'users', pUid), { guardianUids: updatedGuardians }, { merge: true });
+
+  // ── Many-to-many: update guardian side ───────────────────────────────────
+  const guardianDoc = await getDoc(doc(db, 'users', gUid));
+  const existingPatients = guardianDoc.exists() ? (guardianDoc.data().linkedPatientUids || []) : [];
+  const updatedPatients = [...new Set([...existingPatients, pUid])];
+  await setDoc(doc(db, 'users', gUid), { linkedPatientUids: updatedPatients }, { merge: true });
+
+  // ── Local cache: store all linked patient UIDs + set the active one ──────
+  await AsyncStorage.setItem('@medicare_linked_patient_uid', pUid);
+  await AsyncStorage.setItem('@medicare_linked_patient_uids', JSON.stringify(updatedPatients));
+
+  return true;
+};
+
+/**
+ * Switches the guardian's active patient (for many-to-many support).
+ * @param {string} pUid - UID of the patient to make active
+ */
+export const switchActivePatient = async (pUid) => {
+  await AsyncStorage.setItem('@medicare_linked_patient_uid', pUid);
+};
+
+/**
+ * Returns all patient UIDs a guardian is linked to.
+ * @returns {string[]}
+ */
+export const getLinkedPatientUids = async () => {
+  const raw = await AsyncStorage.getItem('@medicare_linked_patient_uids');
+  if (raw) return JSON.parse(raw);
+  // Fallback: read from Firestore
+  if (!auth.currentUser) return [];
+  const doc_ = await getDoc(doc(db, 'users', auth.currentUser.uid));
+  return doc_.exists() ? (doc_.data().linkedPatientUids || []) : [];
 };
 
 // ─── Medicines ───────────────────────────────────────────────────────────────
@@ -252,24 +301,36 @@ export const getAdherenceLogs = async () => {
  * @returns {function} Unsubscribe function
  */
 export const subscribeLogs = (pUid, callback) => {
-  const logsRef = collection(db, 'patients', pUid, 'adherenceLogs');
+  // #17 — only fetch the last 90 days to control Firestore read costs
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  const logsRef = query(
+    collection(db, 'patients', pUid, 'adherenceLogs'),
+    where('timestamp', '>', ninetyDaysAgo.toISOString()),
+    orderBy('timestamp', 'desc')
+  );
   return onSnapshot(logsRef, (snap) => {
     const logs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-    callback(logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    callback(logs);
   });
 };
 
 export const getWeeklyAdherenceData = (logs) => {
-  // Synchronous computation from an already-fetched log array
-  // (no extra Firestore call needed)
+  // #4 — compare both sides in local timezone to avoid UTC midnight drift
+  const toLocalDateStr = (isoString) => {
+    const d = new Date(isoString);
+    // Use locale date parts (respects device timezone)
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  };
+
   const last7Days = [...Array(7)].map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    return d.toDateString();
+    return toLocalDateStr(d.toISOString());
   }).reverse();
 
   return last7Days.map(dateStr => {
-    const dayLogs = logs.filter(log => new Date(log.timestamp).toDateString() === dateStr);
+    const dayLogs = logs.filter(log => toLocalDateStr(log.timestamp) === dateStr);
     if (dayLogs.length === 0) return 0;
     const tookCount = dayLogs.filter(log => log.status === 'Took').length;
     return Math.round((tookCount / dayLogs.length) * 100);
